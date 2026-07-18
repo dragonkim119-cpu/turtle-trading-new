@@ -19,7 +19,9 @@
 - **리스크**: 거래당 2% (권장수량 자동 계산)
 - **보완 필터** (전부 개별 on/off): ADX(14)≥20 · 거래량≥1.5×평균 · Rolling VWAP(30일) 방향 · 펀딩비 ±0.1% 과열 차단
 
-상세 설계: [docs/superpowers/specs/](docs/superpowers/specs/)
+- **활용 가이드·사용법**: [docs/USAGE.md](docs/USAGE.md)
+- **보안 리뷰·배포 체크리스트**: [docs/SECURITY.md](docs/SECURITY.md)
+- **상세 설계**: [docs/superpowers/specs/](docs/superpowers/specs/)
 
 ## 로컬 실행
 
