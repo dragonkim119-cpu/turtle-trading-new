@@ -107,13 +107,19 @@ export function fmtPartialTp(
   target: number,
   mark: number,
   fraction: number,
+  movedBreakeven = false,
 ): string {
-  return [
+  const lines = [
     `🟡 부분 익절 도달 — ${symbol} · ${timeframe.toUpperCase()}`,
     `${side === "long" ? "롱" : "숏"} 1R 목표 도달 — 물량 ${Math.round(fraction * 100)}% 익절 권고`,
     `목표 ${nf(target)} / 마크가격 ${nf(mark)}`,
-    `남은 물량은 트레일링 스톱으로 계속 관리`,
-  ].join("\n");
+  ];
+  lines.push(
+    movedBreakeven
+      ? `🛡 남은 물량 스톱 → 본전(진입가)으로 이동 완료 (무손실 구간)`
+      : `남은 물량은 트레일링 스톱으로 계속 관리`,
+  );
+  return lines.join("\n");
 }
 
 export function fmtEngineAlert(msg: string): string {

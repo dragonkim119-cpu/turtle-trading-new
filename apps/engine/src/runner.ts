@@ -134,17 +134,30 @@ export async function checkStops(deps: RunnerDeps): Promise<void> {
       if (reached) {
         const params = repo.getParams(pos.symbol, pos.timeframe);
         const frac = params.partialTp?.fraction ?? 0.5;
+        // Move remaining stop to breakeven if configured (ratchet: never loosen).
+        let movedBreakeven = false;
+        if (params.partialTp?.moveStopToBreakeven) {
+          const be =
+            pos.side === "long"
+              ? Math.max(pos.stop, pos.entryPrice)
+              : Math.min(pos.stop, pos.entryPrice);
+          if (be !== pos.stop) {
+            repo.updateStop(pos.id, be);
+            movedBreakeven = true;
+          }
+        }
         const id = repo.insertSignal(pos.symbol, pos.timeframe, `PARTIAL_TP:${pos.id}`, pos.id, {
           positionId: pos.id,
           target: pos.partialTpTarget,
           mark,
           fraction: frac,
+          movedBreakeven,
         });
         if (id !== null) {
           repo.markPartialDone(pos.id);
           if (notifyEnabled(repo, "partial")) {
             const ok = await telegram.send(
-              fmtPartialTp(pos.symbol, pos.timeframe, pos.side, pos.partialTpTarget, mark, frac),
+              fmtPartialTp(pos.symbol, pos.timeframe, pos.side, pos.partialTpTarget, mark, frac, movedBreakeven),
             );
             repo.markDelivered(id, ok);
             if (!ok) health.telegramFail();

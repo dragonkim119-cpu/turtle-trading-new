@@ -151,6 +151,70 @@ export default function ParamsSheet({
           />
         </FilterRow>
 
+        <h2 style={{ marginTop: 16 }}>부분 익절 (승률 개선)</h2>
+        <div className="list-item">
+          <div className="row spread">
+            <b style={{ fontSize: 14 }}>부분 익절</b>
+            <button
+              className={p.partialTp ? "" : "secondary"}
+              onClick={() =>
+                setP({
+                  ...p,
+                  partialTp: p.partialTp ? null : { atR: 1, fraction: 0.5, moveStopToBreakeven: false },
+                })
+              }
+              style={{ padding: "5px 12px" }}
+            >
+              {p.partialTp ? "ON" : "OFF"}
+            </button>
+          </div>
+          {p.partialTp && (
+            <>
+              <div className="row">
+                <div style={{ flex: 1 }}>
+                  <label>익절 시점 (R 배수)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={p.partialTp.atR}
+                    onChange={(e) =>
+                      setP({ ...p, partialTp: { ...p.partialTp!, atR: num(e.target.value) } })
+                    }
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label>익절 비율 (%)</label>
+                  <input
+                    type="number"
+                    value={p.partialTp.fraction * 100}
+                    onChange={(e) =>
+                      setP({ ...p, partialTp: { ...p.partialTp!, fraction: num(e.target.value) / 100 } })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="row spread" style={{ marginTop: 8 }}>
+                <span className="muted">익절 후 남은 물량 스톱 → 본전 이동</span>
+                <button
+                  className={p.partialTp.moveStopToBreakeven ? "" : "secondary"}
+                  onClick={() =>
+                    setP({
+                      ...p,
+                      partialTp: { ...p.partialTp!, moveStopToBreakeven: !p.partialTp!.moveStopToBreakeven },
+                    })
+                  }
+                  style={{ padding: "5px 12px" }}
+                >
+                  {p.partialTp.moveStopToBreakeven ? "ON" : "OFF"}
+                </button>
+              </div>
+              <p className="muted" style={{ marginTop: 4, fontSize: 11 }}>
+                본전 이동: 승률↑·MDD↓ 경향이나 PF 소폭↓ (회복 거래 조기 청산). 백테스트로 확인 후 사용.
+              </p>
+            </>
+          )}
+        </div>
+
         <div className="row" style={{ marginTop: 16 }}>
           <button className="secondary" style={{ flex: 1 }} onClick={onClose}>
             취소

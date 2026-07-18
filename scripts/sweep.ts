@@ -52,9 +52,10 @@ const ENTRY = [20, 40, 55];
 const EXIT = [10, 15, 20];
 const STOP = [2, 2.5, 3];
 const BUFFER = [0, 0.3];
-const PARTIAL: (null | { atR: number; fraction: number })[] = [
+const PARTIAL: (null | { atR: number; fraction: number; moveStopToBreakeven: boolean })[] = [
   null,
-  { atR: 1, fraction: 0.5 },
+  { atR: 1, fraction: 0.5, moveStopToBreakeven: false },
+  { atR: 1, fraction: 0.5, moveStopToBreakeven: true },
 ];
 
 function makeParams(
@@ -62,7 +63,7 @@ function makeParams(
   exitPeriod: number,
   stopMult: number,
   entryBufferAtr: number,
-  partialTp: { atR: number; fraction: number } | null,
+  partialTp: { atR: number; fraction: number; moveStopToBreakeven: boolean } | null,
 ): Params {
   const p = structuredClone(DEFAULT_PARAMS);
   p.entryPeriod = entryPeriod;
@@ -114,7 +115,9 @@ async function main() {
               청산: x,
               손절x: s,
               버퍼: b,
-              부분익절: pt ? `${pt.atR}R/${pt.fraction * 100}%` : "off",
+              부분익절: pt
+                ? `${pt.atR}R/${pt.fraction * 100}%${pt.moveStopToBreakeven ? "+BE" : ""}`
+                : "off",
               거래수: stats.n,
               승률: Math.round(stats.winRate * 1000) / 10,
               평균R: Math.round(stats.avgR * 100) / 100,

@@ -150,7 +150,7 @@ describe("partial take-profit (backtest)", () => {
     const full = runBacktest(trendCandles(), P, 1000);
     const partial = runBacktest(
       trendCandles(),
-      { ...P, partialTp: { atR: 1, fraction: 0.5 } },
+      { ...P, partialTp: { atR: 1, fraction: 0.5, moveStopToBreakeven: false } },
       1000,
     );
     expect(full.trades.length).toBe(partial.trades.length);
@@ -161,6 +161,26 @@ describe("partial take-profit (backtest)", () => {
     expect(partial.trades[0].rMultiple).toBeGreaterThanOrEqual(0.5);
   });
 
+  it("breakeven stop rescues the remaining half when price reverses after 1R", () => {
+    // exitPeriod 10 on a short series => no channel/trailing, isolating stop+partial+breakeven.
+    const P3: Params = { ...P, entryPeriod: 3, exitPeriod: 10, atrPeriod: 2, emaPeriod: 3, stopMult: 2 };
+    const candles: Candle[] = [];
+    let t = 0;
+    for (let i = 0; i < 5; i++) candles.push(c(9.5, 8.5, 9, 100, t++)); // flat band 8.5..9.5
+    candles.push(c(12, 9, 12, 100, t++)); // breakout entry @12, initRisk 2*ATR(=2)=4, stop 8, 1R target 16
+    candles.push(c(17, 12, 15, 100, t++)); // high 17 hits 1R target
+    candles.push(c(13, 11, 11.5, 100, t++)); // dips to 11 (below entry 12, above orig stop 8)
+    candles.push(c(11, 7, 7.5, 100, t++)); // falls to 7 (below orig stop 8)
+
+    const off = runBacktest(candles, { ...P3, partialTp: { atR: 1, fraction: 0.5, moveStopToBreakeven: false } }, 1000);
+    const be = runBacktest(candles, { ...P3, partialTp: { atR: 1, fraction: 0.5, moveStopToBreakeven: true } }, 1000);
+    expect(off.trades).toHaveLength(1);
+    expect(be.trades).toHaveLength(1);
+    // breakeven exits remaining half at entry (0R) vs original stop (-1R): net +0.5R vs 0R
+    expect(be.trades[0].rMultiple).toBeCloseTo(0.5);
+    expect(off.trades[0].rMultiple).toBeCloseTo(0);
+    expect(be.trades[0].rMultiple).toBeGreaterThan(off.trades[0].rMultiple);
+  });
 });
 
 describe("runBacktest", () => {

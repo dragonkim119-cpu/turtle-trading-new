@@ -61,13 +61,21 @@ function baseline(): Params {
   return p;
 }
 
+/** partial TP without breakeven stop move */
 function candidate(): Params {
   const p = baseline();
   p.entryPeriod = 20;
   p.exitPeriod = 15;
   p.stopMult = 2.0;
   p.entryBufferAtr = 0.3;
-  p.partialTp = { atR: 1, fraction: 0.5 };
+  p.partialTp = { atR: 1, fraction: 0.5, moveStopToBreakeven: false };
+  return p;
+}
+
+/** same, but move the stop to breakeven after the partial fills */
+function candidateBE(): Params {
+  const p = candidate();
+  p.partialTp = { atR: 1, fraction: 0.5, moveStopToBreakeven: true };
   return p;
 }
 
@@ -82,7 +90,7 @@ const DATASETS: [string, string, string, string][] = [
 ];
 
 async function main() {
-  console.log("교차검증: 후보(20/15/버퍼0.3/부분익절1R50%) vs 기준선(20/10/2.0/off)\n");
+  console.log("교차검증: 부분익절(20/15/버퍼0.3) — 본전이동 off vs on, 기준선(20/10/2.0/off) 대비\n");
   const summary: Record<string, unknown>[] = [];
 
   for (const [symbol, tf, start, end] of DATASETS) {
@@ -104,28 +112,33 @@ async function main() {
     }
     const b = runBacktest(candles, baseline()).stats;
     const c = runBacktest(candles, candidate()).stats;
+    const be = runBacktest(candles, candidateBE()).stats;
     const fmtPf = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : "inf");
     summary.push({
       데이터셋: `${symbol} ${tf} ${start.slice(0, 4)}~${end.slice(0, 4)}`,
-      "기준_승률": (b.winRate * 100).toFixed(1),
       "기준_PF": fmtPf(b.profitFactor),
-      "기준_MDD": (b.mdd * 100).toFixed(1),
-      "후보_승률": (c.winRate * 100).toFixed(1),
-      "후보_PF": fmtPf(c.profitFactor),
-      "후보_MDD": (c.mdd * 100).toFixed(1),
-      "PF개선": Number.isFinite(c.profitFactor) && Number.isFinite(b.profitFactor)
-        ? (c.profitFactor - b.profitFactor >= 0 ? "+" : "") + (c.profitFactor - b.profitFactor).toFixed(2)
+      "익절_승률": (c.winRate * 100).toFixed(1),
+      "익절_PF": fmtPf(c.profitFactor),
+      "익절_MDD": (c.mdd * 100).toFixed(1),
+      "본전_승률": (be.winRate * 100).toFixed(1),
+      "본전_PF": fmtPf(be.profitFactor),
+      "본전_MDD": (be.mdd * 100).toFixed(1),
+      "본전효과PF": Number.isFinite(be.profitFactor) && Number.isFinite(c.profitFactor)
+        ? (be.profitFactor - c.profitFactor >= 0 ? "+" : "") + (be.profitFactor - c.profitFactor).toFixed(2)
         : "-",
     });
   }
 
   console.table(summary);
 
-  const pfWins = summary.filter((r) => String(r["PF개선"]).startsWith("+")).length;
+  const beWins = summary.filter((r) => String(r["본전효과PF"]).startsWith("+")).length;
+  const beMddBetter = summary.length; // reported per-row; qualitative summary below
   console.log(
-    `\n요약: ${summary.length}개 데이터셋 중 후보 PF가 기준선보다 나은 경우 ${pfWins}개.`,
+    `\n요약: ${summary.length}개 중 본전이동이 부분익절-단독 대비 PF 개선 ${beWins}개.`,
   );
-  console.log("판정 기준: 과반에서 PF 개선 + 승률 상승 + MDD 악화 없음이면 채택 가치 있음.");
+  console.log("본전이동은 보통 MDD를 낮추고 손실거래를 무손실로 바꿈 — 큰 추세 잔여물량을 일찍 털 위험은 트레이드오프.");
+  console.log("판정: MDD 개선 + PF 유지/개선이면 채택.");
+  void beMddBetter;
 }
 
 main().catch((e) => {

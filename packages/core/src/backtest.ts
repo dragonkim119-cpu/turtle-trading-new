@@ -112,6 +112,10 @@ export function runBacktest(
           realizedR += ptp.atR * ptp.fraction;
           openFraction -= ptp.fraction;
           partialDone = true;
+          if (ptp.moveStopToBreakeven) {
+            // ratchet stop to breakeven, never loosen an already-favorable trail
+            stop = side === "long" ? Math.max(stop, entryPrice) : Math.min(stop, entryPrice);
+          }
         }
       }
       // 2) close-based channel exit

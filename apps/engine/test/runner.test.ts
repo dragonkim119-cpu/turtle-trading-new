@@ -154,6 +154,45 @@ describe("checkStops", () => {
     expect(repo.listPositions().find((p) => p.id === id)!.partialDone).toBe(1);
   });
 
+  it("moves stop to breakeven on partial TP when configured", async () => {
+    const { repo, telegram, binance, deps } = mkDeps([]);
+    const p = repo.getParams("BTCUSDT", "4h");
+    p.partialTp = { atR: 1, fraction: 0.5, moveStopToBreakeven: true };
+    repo.upsertParams("BTCUSDT", "4h", p);
+    const id = repo.openPosition({
+      symbol: "BTCUSDT",
+      timeframe: "4h",
+      side: "long",
+      entryPrice: 100,
+      qty: 1,
+      stop: 95,
+      partialTpTarget: 105,
+    });
+    binance.fetchMarkPrice.mockResolvedValue(106);
+    await checkStops(deps);
+    const pos = repo.listPositions().find((x) => x.id === id)!;
+    expect(pos.stop).toBe(100); // moved from 95 to breakeven (entry)
+    expect(pos.stopHistory.length).toBe(2);
+    expect(telegram.send.mock.calls[0][0]).toContain("본전");
+  });
+
+  it("does not move stop to breakeven when option is off", async () => {
+    const { repo, binance, deps } = mkDeps([]);
+    // default params: moveStopToBreakeven false
+    const id = repo.openPosition({
+      symbol: "BTCUSDT",
+      timeframe: "4h",
+      side: "long",
+      entryPrice: 100,
+      qty: 1,
+      stop: 95,
+      partialTpTarget: 105,
+    });
+    binance.fetchMarkPrice.mockResolvedValue(106);
+    await checkStops(deps);
+    expect(repo.listPositions().find((x) => x.id === id)!.stop).toBe(95); // unchanged
+  });
+
   it("does not fire partial TP before target reached", async () => {
     const { repo, telegram, binance, deps } = mkDeps([]);
     repo.openPosition({

@@ -22,6 +22,8 @@ export interface PartialTp {
   atR: number; // e.g. 1.0
   /** fraction of the position closed at the target, 0..1 */
   fraction: number; // e.g. 0.5
+  /** after the partial fills, move the stop to breakeven (entry) for the rest */
+  moveStopToBreakeven: boolean;
 }
 
 export interface Params {
@@ -46,7 +48,9 @@ export const DEFAULT_PARAMS: Params = {
   emaPeriod: 200,
   riskPct: 2,
   entryBufferAtr: 0.3, // cross-validated: 0.3×ATR breakout buffer filters marginal false breakouts
-  partialTp: { atR: 1, fraction: 0.5 }, // bank half at 1R — engine emits partial-TP alert
+  // bank half at 1R. breakeven-stop OFF by default: cross-val showed it lifts win
+  // rate + trims MDD but slightly lowers PF (clips recoveries) — opt in per symbol.
+  partialTp: { atR: 1, fraction: 0.5, moveStopToBreakeven: false },
 
   filters: {
     adx: { on: true, period: 14, min: 20 },
