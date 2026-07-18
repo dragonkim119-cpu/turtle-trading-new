@@ -20,7 +20,16 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const symbol = (sp.get("symbol") ?? "BTCUSDT").toUpperCase();
   const tf = (sp.get("tf") ?? "4h") as Timeframe;
-  const limit = Math.min(Number(sp.get("limit") ?? 500), 1000);
+  const limitRaw = Number(sp.get("limit") ?? 500);
+
+  // Validate before interpolating into the upstream URL (param-injection guard).
+  if (!/^[A-Z0-9]{5,20}$/.test(symbol)) {
+    return NextResponse.json({ error: "invalid symbol" }, { status: 400 });
+  }
+  if (tf !== "4h" && tf !== "1d") {
+    return NextResponse.json({ error: "invalid timeframe" }, { status: 400 });
+  }
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 1000) : 500;
 
   const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${tf}&limit=${limit}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(15_000), cache: "no-store" });
