@@ -27,6 +27,18 @@ export interface BacktestResult {
   stats: BacktestStats;
 }
 
+/** Trading costs, each as a per-side percentage (0.05 = 0.05%). */
+export interface BacktestCosts {
+  takerPct: number; // taker fee per fill
+  slippagePct: number; // adverse fill slippage per fill
+}
+
+/** Realistic Binance futures taker costs — use in CLI/scripts, not unit tests. */
+export const DEFAULT_COSTS: BacktestCosts = { takerPct: 0.05, slippagePct: 0.05 };
+
+/** Zero costs — default for the pure function so unit tests stay deterministic. */
+export const NO_COSTS: BacktestCosts = { takerPct: 0, slippagePct: 0 };
+
 /**
  * Replay the turtle rules over historical candles.
  * Mirrors signals.ts judgeClose logic with precomputed indicator arrays
@@ -41,7 +53,10 @@ export function runBacktest(
   candles: Candle[],
   params: Params,
   startEquity = 10_000_000,
+  costs: BacktestCosts = NO_COSTS,
 ): BacktestResult {
+  const slip = costs.slippagePct / 100;
+  const taker = costs.takerPct / 100;
   const entryBands = donchian(candles, params.entryPeriod);
   const exitBands = donchian(candles, params.exitPeriod);
   const emaArr = ema(
@@ -56,12 +71,14 @@ export function runBacktest(
   let mdd = 0;
 
   let side: Side | null = null;
-  let entryPrice = 0;
+  let entryPrice = 0; // nominal close at entry (used for stop/target geometry)
+  let effEntry = 0; // slippage-adjusted entry fill
   let entryTime = 0;
   let stop = 0;
   let initRisk = 0; // price distance at entry
   let partialDone = false;
-  let realizedR = 0; // R already banked by partial take-profit
+  let realizedR = 0; // R already banked by partial take-profit (net of slippage)
+  let feeR = 0; // accumulated fee cost expressed in R (entry + partial fills)
   let openFraction = 1; // fraction of the position still open
 
   const closeTrade = (
@@ -70,8 +87,10 @@ export function runBacktest(
     exitReason: "stop" | "channel",
   ) => {
     const dir = side === "long" ? 1 : -1;
-    const move = (exitPrice - entryPrice) * dir;
-    const r = realizedR + (initRisk > 0 ? (move / initRisk) * openFraction : 0);
+    const effExit = exitPrice * (1 - slip * dir); // adverse slippage on exit fill
+    const remainingR = initRisk > 0 ? ((effExit - effEntry) * dir / initRisk) * openFraction : 0;
+    const finalFeeR = initRisk > 0 ? (effExit * taker) / initRisk * openFraction : 0;
+    const r = realizedR + remainingR - feeR - finalFeeR;
     const pnlPct = (params.riskPct / 100) * r;
     equity *= 1 + pnlPct;
     peak = Math.max(peak, equity);
@@ -109,7 +128,10 @@ export function runBacktest(
           side === "long" ? entryPrice + ptp.atR * initRisk : entryPrice - ptp.atR * initRisk;
         const reached = side === "long" ? c.high >= target : c.low <= target;
         if (reached) {
-          realizedR += ptp.atR * ptp.fraction;
+          const dir = side === "long" ? 1 : -1;
+          const effFill = target * (1 - slip * dir); // adverse slippage on the partial exit
+          realizedR += ((effFill - effEntry) * dir / initRisk) * ptp.fraction;
+          feeR += (effFill * taker) / initRisk * ptp.fraction;
           openFraction -= ptp.fraction;
           partialDone = true;
           if (ptp.moveStopToBreakeven) {
@@ -160,6 +182,8 @@ export function runBacktest(
     entryTime = c.openTime;
     initRisk = params.stopMult * atrV;
     stop = dir === "long" ? c.close - initRisk : c.close + initRisk;
+    effEntry = c.close * (1 + slip * (dir === "long" ? 1 : -1)); // adverse slippage on entry fill
+    feeR = initRisk > 0 ? (effEntry * taker) / initRisk : 0; // entry fee (full position)
     partialDone = false;
     realizedR = 0;
     openFraction = 1;

@@ -10,6 +10,7 @@
 import {
   DEFAULT_PARAMS,
   runBacktest,
+  DEFAULT_COSTS,
   type Candle,
   type Params,
 } from "../packages/core/src/index.js";
@@ -109,7 +110,7 @@ async function main() {
       for (const s of STOP)
         for (const b of BUFFER)
           for (const pt of PARTIAL) {
-            const { stats } = runBacktest(candles, makeParams(e, x, s, b, pt));
+            const { stats } = runBacktest(candles, makeParams(e, x, s, b, pt), 10_000_000, DEFAULT_COSTS);
             rows.push({
               진입: e,
               청산: x,

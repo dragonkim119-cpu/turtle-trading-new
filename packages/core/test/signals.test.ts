@@ -204,6 +204,26 @@ describe("runBacktest", () => {
     expect(res.stats.endEquity).toBeGreaterThan(1000);
   });
 
+  it("costs (fees+slippage) reduce every trade's R vs zero-cost", () => {
+    const candles = trendThenReversal();
+    const free = runBacktest(candles, P, 1000);
+    const costed = runBacktest(candles, P, 1000, { takerPct: 0.05, slippagePct: 0.05 });
+    expect(costed.stats.n).toBe(free.stats.n);
+    // same trades, each nets less after costs
+    for (let i = 0; i < free.trades.length; i++) {
+      expect(costed.trades[i].rMultiple).toBeLessThan(free.trades[i].rMultiple);
+    }
+    expect(costed.stats.endEquity).toBeLessThan(free.stats.endEquity);
+  });
+
+  it("zero costs is numerically identical to the default (no-cost) path", () => {
+    const candles = trendThenReversal();
+    const a = runBacktest(candles, P, 1000);
+    const b = runBacktest(candles, P, 1000, { takerPct: 0, slippagePct: 0 });
+    expect(b.stats.endEquity).toBeCloseTo(a.stats.endEquity, 6);
+    expect(b.trades[0].rMultiple).toBeCloseTo(a.trades[0].rMultiple, 6);
+  });
+
   it("volume filter reduces trade count on noisy series", () => {
     const noisy: Candle[] = [];
     let t = 0;

@@ -7,6 +7,7 @@
 import {
   DEFAULT_PARAMS,
   runBacktest,
+  DEFAULT_COSTS,
   type Candle,
   type Params,
 } from "../packages/core/src/index.js";
@@ -110,9 +111,9 @@ async function main() {
       console.log(`${symbol} ${tf} ${start}: 캔들 부족(${candles.length}) — 건너뜀`);
       continue;
     }
-    const b = runBacktest(candles, baseline()).stats;
-    const c = runBacktest(candles, candidate()).stats;
-    const be = runBacktest(candles, candidateBE()).stats;
+    const b = runBacktest(candles, baseline(), 10_000_000, DEFAULT_COSTS).stats;
+    const c = runBacktest(candles, candidate(), 10_000_000, DEFAULT_COSTS).stats;
+    const be = runBacktest(candles, candidateBE(), 10_000_000, DEFAULT_COSTS).stats;
     const fmtPf = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : "inf");
     summary.push({
       데이터셋: `${symbol} ${tf} ${start.slice(0, 4)}~${end.slice(0, 4)}`,

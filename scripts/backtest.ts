@@ -4,7 +4,7 @@
  * Fetches Binance USDT-M futures klines and prints a filter-combination
  * comparison table (turtle base vs each filter vs all filters).
  */
-import { DEFAULT_PARAMS, runBacktest, type Candle, type Params } from "../packages/core/src/index.js";
+import { DEFAULT_COSTS, DEFAULT_PARAMS, runBacktest, type Candle, type Params } from "../packages/core/src/index.js";
 
 const BASE = "https://fapi.binance.com";
 
@@ -81,7 +81,7 @@ async function main() {
   ];
 
   const rows = combos.map(([label, params]) => {
-    const { stats } = runBacktest(candles, params);
+    const { stats } = runBacktest(candles, params, 10_000_000, DEFAULT_COSTS);
     return {
       조합: label,
       거래수: stats.n,
@@ -93,6 +93,7 @@ async function main() {
     };
   });
   console.table(rows);
+  console.log(`주: 수수료 taker ${DEFAULT_COSTS.takerPct}% + 슬리피지 ${DEFAULT_COSTS.slippagePct}% (편도) 반영.`);
   console.log("주: 펀딩비 필터는 과거 데이터 부재로 백테스트에서 제외됨 (실시간 엔진에서만 동작).");
 }
 
