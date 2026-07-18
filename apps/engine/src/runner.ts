@@ -65,10 +65,12 @@ export async function processSymbol(
   if (!candles.length) return;
 
   // Determine closed candles needing judgment (catch-up after downtime).
+  // First-ever run (no state): judge only the latest closed candle — replaying
+  // history would spam alerts for long-past breakouts.
   const pending = candles
     .map((c, idx) => ({ openTime: c.openTime, idx }))
     .filter((c) => c.openTime > prev && c.openTime <= lastClosed)
-    .slice(-10);
+    .slice(prev === 0 ? -1 : -10);
 
   for (const { openTime, idx } of pending) {
     const window = candles.slice(0, idx + 1);
