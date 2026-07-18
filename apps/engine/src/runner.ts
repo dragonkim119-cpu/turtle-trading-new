@@ -1,4 +1,4 @@
-import { judgeClose, type PosCtx, type Timeframe } from "@turtle/core";
+import { featureSnapshot, judgeClose, type PosCtx, type Timeframe } from "@turtle/core";
 import type { Repo } from "@turtle/db";
 import { lastClosedOpenTime, type BinanceClient } from "./binance.js";
 import { fmtEvent, fmtPartialTp, fmtStopHit, type TelegramSender } from "./telegram.js";
@@ -82,7 +82,13 @@ export async function processSymbol(
 
     const events = judgeClose(pos, window, params, funding);
     for (const ev of events) {
-      const id = repo.insertSignal(symbol, tf, ev.type, openTime, ev);
+      // Capture a feature snapshot at entry candles for future meta-labeling.
+      let snapshot: unknown = null;
+      if (ev.type === "ENTRY_LONG" || ev.type === "ENTRY_SHORT") {
+        const dir = ev.type === "ENTRY_LONG" ? "long" : "short";
+        snapshot = featureSnapshot(dir, window, window.length - 1, params, funding);
+      }
+      const id = repo.insertSignal(symbol, tf, ev.type, openTime, ev, snapshot);
       if (id === null) continue; // duplicate — already handled
       log(`${symbol} ${tf} ${ev.type} @candle ${new Date(openTime).toISOString()}`);
 

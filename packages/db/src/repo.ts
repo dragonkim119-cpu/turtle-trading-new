@@ -10,6 +10,7 @@ export interface SignalRow {
   payload: unknown;
   delivered: number;
   createdAt: number;
+  featureSnapshot: unknown | null;
 }
 
 export interface PositionRow {
@@ -28,6 +29,8 @@ export interface PositionRow {
   closeReason: string | null;
   partialTpTarget: number | null;
   partialDone: number;
+  initialRisk: number | null;
+  realizedR: number | null;
 }
 
 export interface NewsRow {
@@ -98,13 +101,22 @@ export class Repo {
     event: string,
     candleTime: number,
     payload: unknown,
+    featureSnapshot?: unknown | null,
   ): number | null {
     try {
       const res = this.db
         .prepare(
-          "INSERT INTO signals(symbol,timeframe,event,candleTime,payload,createdAt) VALUES(?,?,?,?,?,?)",
+          "INSERT INTO signals(symbol,timeframe,event,candleTime,payload,createdAt,featureSnapshot) VALUES(?,?,?,?,?,?,?)",
         )
-        .run(symbol, timeframe, event, candleTime, JSON.stringify(payload), Date.now());
+        .run(
+          symbol,
+          timeframe,
+          event,
+          candleTime,
+          JSON.stringify(payload),
+          Date.now(),
+          featureSnapshot == null ? null : JSON.stringify(featureSnapshot),
+        );
       return Number(res.lastInsertRowid);
     } catch (e: unknown) {
       if (e instanceof Error && e.message.includes("UNIQUE")) return null;
@@ -117,8 +129,15 @@ export class Repo {
   listSignals(limit = 100): SignalRow[] {
     const rows = this.db
       .prepare("SELECT * FROM signals ORDER BY createdAt DESC LIMIT ?")
-      .all(limit) as (Omit<SignalRow, "payload"> & { payload: string })[];
-    return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
+      .all(limit) as (Omit<SignalRow, "payload" | "featureSnapshot"> & {
+      payload: string;
+      featureSnapshot: string | null;
+    })[];
+    return rows.map((r) => ({
+      ...r,
+      payload: JSON.parse(r.payload),
+      featureSnapshot: r.featureSnapshot ? JSON.parse(r.featureSnapshot) : null,
+    }));
   }
 
   // --- positions ---
@@ -131,9 +150,11 @@ export class Repo {
     stop: number;
     partialTpTarget?: number | null;
   }): number {
+    // initial risk = price distance from entry to the first stop (the R unit)
+    const initialRisk = Math.abs(p.entryPrice - p.stop);
     const res = this.db
       .prepare(
-        "INSERT INTO positions(symbol,timeframe,side,entryPrice,qty,stop,stopHistory,openedAt,partialTpTarget) VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO positions(symbol,timeframe,side,entryPrice,qty,stop,stopHistory,openedAt,partialTpTarget,initialRisk) VALUES(?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         p.symbol,
@@ -145,6 +166,7 @@ export class Repo {
         JSON.stringify([{ stop: p.stop, at: Date.now() }]),
         Date.now(),
         p.partialTpTarget ?? null,
+        initialRisk > 0 ? initialRisk : null,
       );
     return Number(res.lastInsertRowid);
   }
@@ -163,9 +185,20 @@ export class Repo {
       .run(newStop, JSON.stringify(hist), id);
   }
   closePosition(id: number, closePrice: number, reason: string): void {
+    // Compute realized R = signed price move / initial risk, for ML labeling.
+    const row = this.db
+      .prepare("SELECT side, entryPrice, initialRisk FROM positions WHERE id=?")
+      .get(id) as { side: Side; entryPrice: number; initialRisk: number | null } | undefined;
+    let realizedR: number | null = null;
+    if (row && row.initialRisk && row.initialRisk > 0) {
+      const dir = row.side === "long" ? 1 : -1;
+      realizedR = ((closePrice - row.entryPrice) * dir) / row.initialRisk;
+    }
     this.db
-      .prepare("UPDATE positions SET status='closed', closedAt=?, closePrice=?, closeReason=? WHERE id=?")
-      .run(Date.now(), closePrice, reason, id);
+      .prepare(
+        "UPDATE positions SET status='closed', closedAt=?, closePrice=?, closeReason=?, realizedR=? WHERE id=?",
+      )
+      .run(Date.now(), closePrice, reason, realizedR, id);
   }
   listOpenPositions(): PositionRow[] {
     return this.rowsToPositions(

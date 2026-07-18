@@ -54,9 +54,26 @@ describe("Repo", () => {
     const pos = r.getOpenPosition("BTCUSDT", "4h")!;
     expect(pos.stop).toBe(64200);
     expect(pos.stopHistory).toHaveLength(2);
+    // initial risk = |65000 - 63560| = 1440
+    expect(pos.initialRisk).toBe(1440);
     r.closePosition(id, 66000, "channel_exit");
     expect(r.getOpenPosition("BTCUSDT", "4h")).toBeNull();
-    expect(r.listPositions()[0].status).toBe("closed");
+    const closed = r.listPositions()[0];
+    expect(closed.status).toBe("closed");
+    // realized R = (66000-65000)/1440 = 0.694...
+    expect(closed.realizedR).toBeCloseTo((66000 - 65000) / 1440, 4);
+  });
+
+  it("stores and reads back a feature snapshot on a signal", () => {
+    const r = repo();
+    const snap = { dir: "long", breakoutStrengthAtr: 1.2, adx: 28 };
+    const id = r.insertSignal("BTCUSDT", "4h", "ENTRY_LONG", 1000, { price: 1 }, snap);
+    expect(id).not.toBeNull();
+    const rows = r.listSignals();
+    expect(rows[0].featureSnapshot).toEqual(snap);
+    // null snapshot when omitted
+    r.insertSignal("BTCUSDT", "4h", "EXIT_LONG", 2000, { price: 2 });
+    expect(r.listSignals().find((s) => s.event === "EXIT_LONG")!.featureSnapshot).toBeNull();
   });
 
   it("news dedupe by link", () => {

@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS signals (
   payload TEXT NOT NULL,
   delivered INTEGER NOT NULL DEFAULT 0,
   createdAt INTEGER NOT NULL,
+  featureSnapshot TEXT,
   UNIQUE (symbol, timeframe, event, candleTime)
 );
 CREATE TABLE IF NOT EXISTS positions (
@@ -45,7 +46,9 @@ CREATE TABLE IF NOT EXISTS positions (
   closePrice REAL,
   closeReason TEXT,
   partialTpTarget REAL,
-  partialDone INTEGER NOT NULL DEFAULT 0
+  partialDone INTEGER NOT NULL DEFAULT 0,
+  initialRisk REAL,
+  realizedR REAL
 );
 CREATE TABLE IF NOT EXISTS news_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,13 +82,26 @@ export function openDb(path: string): DB {
 
 /** Additive migrations for DBs created before a column existed. */
 function migrate(db: DB): void {
-  const cols = new Set(
+  const posCols = new Set(
     (db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]).map((r) => r.name),
   );
-  if (!cols.has("partialTpTarget")) {
+  if (!posCols.has("partialTpTarget")) {
     db.exec("ALTER TABLE positions ADD COLUMN partialTpTarget REAL");
   }
-  if (!cols.has("partialDone")) {
+  if (!posCols.has("partialDone")) {
     db.exec("ALTER TABLE positions ADD COLUMN partialDone INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!posCols.has("initialRisk")) {
+    db.exec("ALTER TABLE positions ADD COLUMN initialRisk REAL");
+  }
+  if (!posCols.has("realizedR")) {
+    db.exec("ALTER TABLE positions ADD COLUMN realizedR REAL");
+  }
+
+  const sigCols = new Set(
+    (db.prepare("PRAGMA table_info(signals)").all() as { name: string }[]).map((r) => r.name),
+  );
+  if (!sigCols.has("featureSnapshot")) {
+    db.exec("ALTER TABLE signals ADD COLUMN featureSnapshot TEXT");
   }
 }
