@@ -4,6 +4,8 @@ const BASE = "https://fapi.binance.com";
 
 export interface BinanceClient {
   fetchKlines(symbol: string, tf: Timeframe, limit: number, endTime?: number): Promise<Candle[]>;
+  /** Fetch klines at any Binance interval (e.g. "1m") — used by the volatility guard. */
+  fetchKlinesRaw(symbol: string, interval: string, limit: number): Promise<Candle[]>;
   fetchMarkPrice(symbol: string): Promise<number>;
   fetchFunding(symbol: string): Promise<number | null>;
 }
@@ -30,20 +32,28 @@ async function getJson(url: string): Promise<unknown> {
 }
 
 export function createBinanceClient(): BinanceClient {
+  const mapRows = (rows: unknown[][]): Candle[] =>
+    rows.map((r) => ({
+      openTime: Number(r[0]),
+      open: Number(r[1]),
+      high: Number(r[2]),
+      low: Number(r[3]),
+      close: Number(r[4]),
+      volume: Number(r[5]),
+    }));
+
   return {
     async fetchKlines(symbol, tf, limit, endTime) {
       return withRetry(async () => {
         let url = `${BASE}/fapi/v1/klines?symbol=${symbol}&interval=${tf}&limit=${limit}`;
         if (endTime !== undefined) url += `&endTime=${endTime}`;
-        const rows = (await getJson(url)) as unknown[][];
-        return rows.map((r) => ({
-          openTime: Number(r[0]),
-          open: Number(r[1]),
-          high: Number(r[2]),
-          low: Number(r[3]),
-          close: Number(r[4]),
-          volume: Number(r[5]),
-        }));
+        return mapRows((await getJson(url)) as unknown[][]);
+      });
+    },
+    async fetchKlinesRaw(symbol, interval, limit) {
+      return withRetry(async () => {
+        const url = `${BASE}/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+        return mapRows((await getJson(url)) as unknown[][]);
       });
     },
     async fetchMarkPrice(symbol) {

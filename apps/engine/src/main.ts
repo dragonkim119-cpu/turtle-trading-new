@@ -6,9 +6,11 @@ import { Health } from "./health.js";
 import { checkStops, processSymbol, type RunnerDeps } from "./runner.js";
 import { every, scheduleAtCloses } from "./scheduler.js";
 import { pollRss } from "./rss.js";
+import { runVolGuard } from "./volatilityGuard.js";
 
 const TIMEFRAMES: Timeframe[] = ["4h", "1d"];
 const STOP_INTERVAL_MS = 60_000;
+const VOLGUARD_INTERVAL_MS = 60_000;
 const RSS_INTERVAL_MS = 10 * 60_000;
 
 function main() {
@@ -51,6 +53,7 @@ function main() {
     scheduleAtCloses(tf, () => runAll(tf), (e) => log(`schedule ${tf}: ${e.message}`));
   }
   every(STOP_INTERVAL_MS, () => checkStops(deps), (e) => log(`stops: ${e.message}`));
+  every(VOLGUARD_INTERVAL_MS, () => runVolGuard({ repo, binance, telegram, health, log }), (e) => log(`volguard: ${e.message}`));
   every(RSS_INTERVAL_MS, () => pollRss({ repo, telegram, log }), (e) => log(`rss: ${e.message}`));
   pollRss({ repo, telegram, log }).catch((e) => log(`rss boot: ${e.message}`));
 

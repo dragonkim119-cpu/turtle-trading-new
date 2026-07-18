@@ -37,6 +37,7 @@ function mkDeps(candles: Candle[]) {
   const telegram = { send: vi.fn(async (t: string) => (sent.push(t), true)) };
   const binance = {
     fetchKlines: vi.fn(async () => candles.map((c) => ({ ...c }))),
+    fetchKlinesRaw: vi.fn(async () => [] as ReturnType<typeof candles.map>),
     fetchMarkPrice: vi.fn(async () => 0),
     fetchFunding: vi.fn(async () => 0.0001),
   };
@@ -139,7 +140,7 @@ describe("checkStops", () => {
     expect(stopAlerts).toHaveLength(1);
   });
 
-  it("no alert while mark above stop (long)", async () => {
+  it("no alert while mark comfortably above stop (long)", async () => {
     const { repo, telegram, binance, deps } = mkDeps([]);
     repo.openPosition({
       symbol: "BTCUSDT",
@@ -149,7 +150,8 @@ describe("checkStops", () => {
       qty: 1,
       stop: 95,
     });
-    binance.fetchMarkPrice.mockResolvedValue(96);
+    // initRisk 5, 0.3R warn zone = stop..96.5; mark 99 is clear of both hit and near
+    binance.fetchMarkPrice.mockResolvedValue(99);
     await checkStops(deps);
     expect(telegram.send).not.toHaveBeenCalled();
   });

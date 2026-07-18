@@ -12,7 +12,15 @@ import {
 import type { Repo } from "@turtle/db";
 import { lastClosedOpenTime, type BinanceClient } from "./binance.js";
 import { computePortfolioState } from "./portfolioState.js";
-import { fmtEvent, fmtGate, fmtPartialTp, fmtStopHit, type TelegramSender } from "./telegram.js";
+import { inCooldown } from "./volatilityGuard.js";
+import {
+  fmtEvent,
+  fmtGate,
+  fmtPartialTp,
+  fmtStopHit,
+  fmtStopNear,
+  type TelegramSender,
+} from "./telegram.js";
 import type { Health } from "./health.js";
 
 /** Read portfolio gate config from settings JSON (fallback to defaults). */
@@ -26,14 +34,25 @@ function gateConfig(repo: Repo): PortfolioGateConfig {
   }
 }
 
-/** Evaluate the portfolio gate for a prospective entry using live DB state. */
-function evaluateEntryGate(repo: Repo, dir: Side, riskPct: number): GateResult {
+/**
+ * Evaluate the entry gate for a prospective entry: portfolio risk (if equity
+ * set) plus a post-spike volatility cooldown. Both only demote, never block.
+ */
+function evaluateEntryGate(repo: Repo, symbol: string, dir: Side, riskPct: number): GateResult {
   const equity = Number(repo.getSetting("equity") ?? 0);
-  if (equity <= 0) {
-    return { demote: false, halveRisk: false, reasons: [], warnings: [] };
+  const gate: GateResult =
+    equity > 0
+      ? evaluatePortfolioGate(dir, computePortfolioState(repo, equity, riskPct, Date.now()), gateConfig(repo))
+      : { demote: false, halveRisk: false, reasons: [], warnings: [] };
+
+  if (inCooldown(repo, symbol, Date.now())) {
+    return {
+      ...gate,
+      demote: true,
+      reasons: [...gate.reasons, "1분 급변 직후 쿨다운 — 진입 비권장"],
+    };
   }
-  const state = computePortfolioState(repo, equity, riskPct, Date.now());
-  return evaluatePortfolioGate(dir, state, gateConfig(repo));
+  return gate;
 }
 
 const CANDLE_FETCH = 320; // covers EMA200 + VWAP(30d on 4h = 180 bars) with margin
@@ -120,7 +139,7 @@ export async function processSymbol(
       if (ev.type === "ENTRY_LONG" || ev.type === "ENTRY_SHORT") {
         const dir = ev.type === "ENTRY_LONG" ? "long" : "short";
         snapshot = featureSnapshot(dir, window, window.length - 1, params, funding);
-        gate = evaluateEntryGate(repo, dir, params.riskPct);
+        gate = evaluateEntryGate(repo, symbol, dir, params.riskPct);
       }
 
       // Store gate result alongside the event payload (for web display).
@@ -215,7 +234,28 @@ export async function checkStops(deps: RunnerDeps): Promise<void> {
     }
 
     const hit = pos.side === "long" ? mark <= pos.stop : mark >= pos.stop;
-    if (!hit) continue;
+    if (!hit) {
+      // Stop-proximity pre-warning: within 0.3×initial risk of the stop, once per stop level.
+      const initRisk = pos.initialRisk ?? Math.abs(pos.entryPrice - pos.stop);
+      const dist = pos.side === "long" ? mark - pos.stop : pos.stop - mark;
+      if (initRisk > 0 && dist > 0 && dist <= 0.3 * initRisk) {
+        const nid = repo.insertSignal(
+          pos.symbol,
+          pos.timeframe,
+          `STOP_NEAR:${pos.id}`,
+          Math.round(pos.stop * 1e8),
+          { positionId: pos.id, mark, stop: pos.stop },
+        );
+        if (nid !== null && notifyEnabled(repo, "stopnear")) {
+          const ok = await telegram.send(
+            fmtStopNear(pos.symbol, pos.timeframe, pos.side, mark, pos.stop),
+          );
+          repo.markDelivered(nid, ok);
+          if (!ok) health.telegramFail();
+        }
+      }
+      continue;
+    }
 
     // Unique per position+stop level so a re-check doesn't re-alert.
     const id = repo.insertSignal(pos.symbol, pos.timeframe, `STOP_HIT:${pos.id}`, Math.round(pos.stop * 1e8), {

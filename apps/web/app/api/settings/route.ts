@@ -15,7 +15,10 @@ const KEYS = [
   "notif:trail",
   "notif:blocked",
   "notif:partial",
+  "notif:volspike",
+  "notif:stopnear",
   "notif:news",
+  "volGuard",
 ] as const;
 
 export async function GET() {

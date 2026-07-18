@@ -122,6 +122,34 @@ export function fmtPartialTp(
   return lines.join("\n");
 }
 
+export function fmtVolSpike(
+  symbol: string,
+  pct: number,
+  baselinePct: number,
+  cooldownMin: number,
+): string {
+  const dir = pct >= 0 ? "급등" : "급락";
+  return [
+    `⚡ ${symbol} 1분 이상변동 (${dir})`,
+    `1분 변동 ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}% (평소 ±${baselinePct.toFixed(2)}%)`,
+    `${cooldownMin}분간 신규 진입 비권장 — 급변 직후 되돌림 주의`,
+  ].join("\n");
+}
+
+export function fmtStopNear(
+  symbol: string,
+  timeframe: Timeframe,
+  side: "long" | "short",
+  mark: number,
+  stop: number,
+): string {
+  return [
+    `🟠 손절선 임박 — ${symbol} · ${timeframe.toUpperCase()}`,
+    `${side === "long" ? "롱" : "숏"} 마크가격 ${nf(mark)} · 손절 ${nf(stop)}`,
+    `손절까지 근접 — 대응 준비`,
+  ].join("\n");
+}
+
 export function fmtEngineAlert(msg: string): string {
   return `🚨 엔진 경보\n${msg}`;
 }

@@ -31,7 +31,9 @@ const EVENT_LABEL: Record<string, { text: string; cls: string }> = {
 
 function label(event: string) {
   if (event.startsWith("STOP_HIT")) return { text: "손절 도달", cls: "red" };
+  if (event.startsWith("STOP_NEAR")) return { text: "손절 임박", cls: "amber" };
   if (event.startsWith("PARTIAL_TP")) return { text: "부분 익절", cls: "amber" };
+  if (event === "VOL_SPIKE") return { text: "1분 급변", cls: "amber" };
   return EVENT_LABEL[event] ?? { text: event, cls: "muted" };
 }
 
