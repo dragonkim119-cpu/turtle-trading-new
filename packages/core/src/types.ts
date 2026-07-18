@@ -40,13 +40,14 @@ export interface Params {
 
 export const DEFAULT_PARAMS: Params = {
   entryPeriod: 20,
-  exitPeriod: 10,
+  exitPeriod: 15, // cross-validated: 15 raised win rate + PF vs classic 10 across symbols/periods
   atrPeriod: 20,
   stopMult: 2.0,
   emaPeriod: 200,
   riskPct: 2,
-  entryBufferAtr: 0,
-  partialTp: null,
+  entryBufferAtr: 0.3, // cross-validated: 0.3×ATR breakout buffer filters marginal false breakouts
+  partialTp: { atR: 1, fraction: 0.5 }, // bank half at 1R — engine emits partial-TP alert
+
   filters: {
     adx: { on: true, period: 14, min: 20 },
     volume: { on: true, period: 20, mult: 1.5 },

@@ -5,7 +5,8 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "backtest": "tsx scripts/backtest.ts",
-    "backtest:sweep": "tsx scripts/sweep.ts"
+    "backtest:sweep": "tsx scripts/sweep.ts",
+    "backtest:crossval": "tsx scripts/crossval.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.0",

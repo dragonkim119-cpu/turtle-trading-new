@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS positions (
   openedAt INTEGER NOT NULL,
   closedAt INTEGER,
   closePrice REAL,
-  closeReason TEXT
+  closeReason TEXT,
+  partialTpTarget REAL,
+  partialDone INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS news_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,5 +73,19 @@ export function openDb(path: string): DB {
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
   db.exec(DDL);
+  migrate(db);
   return db;
+}
+
+/** Additive migrations for DBs created before a column existed. */
+function migrate(db: DB): void {
+  const cols = new Set(
+    (db.prepare("PRAGMA table_info(positions)").all() as { name: string }[]).map((r) => r.name),
+  );
+  if (!cols.has("partialTpTarget")) {
+    db.exec("ALTER TABLE positions ADD COLUMN partialTpTarget REAL");
+  }
+  if (!cols.has("partialDone")) {
+    db.exec("ALTER TABLE positions ADD COLUMN partialDone INTEGER NOT NULL DEFAULT 0");
+  }
 }

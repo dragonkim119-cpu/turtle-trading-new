@@ -41,7 +41,14 @@ async function fetchKlines(
 }
 
 function withFilters(overrides: Partial<Record<keyof Params["filters"], boolean>>): Params {
+  // pin structural params to classic turtle so this table isolates FILTER effect
+  // (independent of whatever DEFAULT_PARAMS structural values are)
   const p: Params = structuredClone(DEFAULT_PARAMS);
+  p.entryPeriod = 20;
+  p.exitPeriod = 10;
+  p.stopMult = 2.0;
+  p.entryBufferAtr = 0;
+  p.partialTp = null;
   p.filters.adx.on = overrides.adx ?? false;
   p.filters.volume.on = overrides.volume ?? false;
   p.filters.vwap.on = overrides.vwap ?? false;

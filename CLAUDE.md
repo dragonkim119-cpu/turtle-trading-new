@@ -24,22 +24,27 @@ pnpm test                              # 전체 유닛 테스트 (core/db/engine
 pnpm --filter @turtle/core test        # 패키지별 테스트
 pnpm --filter @turtle/engine start     # 엔진 (env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, DB_PATH)
 pnpm --filter @turtle/web dev          # 웹 (기본 포트 3000)
-pnpm backtest BTCUSDT 1d 2022-01-01    # 필터 조합 비교표
+pnpm backtest BTCUSDT 1d 2022-01-01    # 필터 조합 비교표 (구조 파라미터는 클래식 고정)
 pnpm backtest:sweep BTCUSDT 4h 2023-01-01  # 진입/청산/손절/버퍼/부분익절 그리드 스윕
+pnpm backtest:crossval                 # 후보 파라미터 vs baseline 다심볼·다기간 교차검증
 ```
 
 웹 빌드: `cd apps/web && npx next build`. 로컬(Windows)은 symlink 권한 없어 standalone 비활성 — Docker 빌드만 `NEXT_STANDALONE=1`.
 
 ## 트레이딩 규칙 (기본값)
 
-- **진입**: 종가 > 20봉 돈치안 상단 + 200 EMA 위 + 활성 필터 통과 (숏은 대칭)
+- **진입**: 종가 > 20봉 돈치안 상단 + **0.3×ATR 버퍼** + 200 EMA 위 + 활성 필터 통과 (숏은 대칭)
 - **손절**: 진입가 ∓ 2×ATR(20). 장중 마크가격 1분 감시 (판정만 종가 기준)
-- **트레일링/청산**: 10봉 반대 채널. 스톱은 유리한 방향으로만 이동(래칫)
+- **트레일링/청산**: **15봉** 반대 채널. 스톱은 유리한 방향으로만 이동(래칫)
+- **부분 익절**: 1R 도달 시 50% 익절 권고 알림 (손절 모니터가 마크가격 감시). 남은 물량은 트레일링 유지
 - **리스크**: 거래당 2%. 수량 = 자산×리스크% ÷ (2×ATR)
 - **보완 필터** (개별 on/off, 진입에만 적용·청산엔 미적용): ADX(14)≥20, 거래량≥1.5×평균, Rolling VWAP(30일) 방향, 펀딩비 ±0.1% 과열 차단
-- **승률 개선 실험용** (backtest 전용, 실시간 엔진 미지원): `entryBufferAtr`(돌파 버퍼), `partialTp`(부분 익절)
+
+기본값(청산 15·버퍼 0.3·부분익절 1R/50%)은 교차검증(`backtest:crossval`) 결과 채택 — 승률 6/6 심볼·기간 상승, PF 4/6 개선. 클래식 터틀(청산10·버퍼0·부분익절off)은 `scripts` 백테스트에서 baseline으로 고정 비교.
 
 돈치안은 **직전 N봉**(현재 봉 제외) — `close > upper[i]`가 곧 돌파. 자기 자신 돌파 버그 방지.
+
+부분 익절 실행 방식: 등록 시 목표가(진입±1R) DB 저장 → 손절 모니터가 마크가격 도달 감지 → `PARTIAL_TP:<posId>` 신호 1회 + 텔레그램 알림 + `partialDone=1`. **알림 전용** — 실제 분할 청산은 사용자가 거래소에서. 백테스트는 R 절반 확정 + 잔여분 트레일링으로 모델링.
 
 ## 규약
 
@@ -59,6 +64,6 @@ Railway: Dockerfile 자동 빌드. Volume `/data` 마운트 + 환경변수 4개.
 
 ## 미완/주의
 
-- 부분 익절(`partialTp`)은 백테스트만 — 실시간 엔진은 분할 포지션 미관리
-- 스윕 상위 조합은 **과최적화 주의**. 다른 기간/심볼 교차검증 후 채택
+- 부분 익절은 **알림 전용** — 엔진이 1R 도달 알림만 보냄, 실제 분할 청산·잔여 수량 조정은 미자동화(사용자가 거래소에서 직접). 부분 익절 후 남은 포지션의 stop을 본전으로 이동하는 로직은 없음
+- 스윕 상위 조합은 **과최적화 주의**. `backtest:crossval`로 다른 기간/심볼 교차검증 후 채택
 - 실전 전 1~2주 신호 관찰 운용 권장

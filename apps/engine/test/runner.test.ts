@@ -133,6 +133,42 @@ describe("checkStops", () => {
     await checkStops(deps);
     expect(telegram.send).not.toHaveBeenCalled();
   });
+
+  it("alerts partial TP once when mark reaches 1R target, then marks done", async () => {
+    const { repo, telegram, binance, deps } = mkDeps([]);
+    // entry 100, stop 95 -> risk 5 -> 1R target 105
+    const id = repo.openPosition({
+      symbol: "BTCUSDT",
+      timeframe: "4h",
+      side: "long",
+      entryPrice: 100,
+      qty: 1,
+      stop: 95,
+      partialTpTarget: 105,
+    });
+    binance.fetchMarkPrice.mockResolvedValue(106);
+    await checkStops(deps);
+    await checkStops(deps); // second tick must not re-alert
+    const ptAlerts = telegram.send.mock.calls.filter((c) => c[0].includes("부분 익절 도달"));
+    expect(ptAlerts).toHaveLength(1);
+    expect(repo.listPositions().find((p) => p.id === id)!.partialDone).toBe(1);
+  });
+
+  it("does not fire partial TP before target reached", async () => {
+    const { repo, telegram, binance, deps } = mkDeps([]);
+    repo.openPosition({
+      symbol: "BTCUSDT",
+      timeframe: "4h",
+      side: "long",
+      entryPrice: 100,
+      qty: 1,
+      stop: 95,
+      partialTpTarget: 105,
+    });
+    binance.fetchMarkPrice.mockResolvedValue(103);
+    await checkStops(deps);
+    expect(telegram.send).not.toHaveBeenCalled();
+  });
 });
 
 describe("scheduler", () => {

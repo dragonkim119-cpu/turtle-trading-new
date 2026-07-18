@@ -1,7 +1,7 @@
 import { judgeClose, type PosCtx, type Timeframe } from "@turtle/core";
 import type { Repo } from "@turtle/db";
 import { lastClosedOpenTime, type BinanceClient } from "./binance.js";
-import { fmtEvent, fmtStopHit, type TelegramSender } from "./telegram.js";
+import { fmtEvent, fmtPartialTp, fmtStopHit, type TelegramSender } from "./telegram.js";
 import type { Health } from "./health.js";
 
 const CANDLE_FETCH = 320; // covers EMA200 + VWAP(30d on 4h = 180 bars) with margin
@@ -126,6 +126,33 @@ export async function checkStops(deps: RunnerDeps): Promise<void> {
       await health.apiFail(`markPrice ${pos.symbol}: ${(e as Error).message}`);
       continue;
     }
+
+    // Partial take-profit: 1R target reached and not yet banked.
+    if (pos.partialTpTarget !== null && pos.partialDone === 0) {
+      const reached =
+        pos.side === "long" ? mark >= pos.partialTpTarget : mark <= pos.partialTpTarget;
+      if (reached) {
+        const params = repo.getParams(pos.symbol, pos.timeframe);
+        const frac = params.partialTp?.fraction ?? 0.5;
+        const id = repo.insertSignal(pos.symbol, pos.timeframe, `PARTIAL_TP:${pos.id}`, pos.id, {
+          positionId: pos.id,
+          target: pos.partialTpTarget,
+          mark,
+          fraction: frac,
+        });
+        if (id !== null) {
+          repo.markPartialDone(pos.id);
+          if (notifyEnabled(repo, "partial")) {
+            const ok = await telegram.send(
+              fmtPartialTp(pos.symbol, pos.timeframe, pos.side, pos.partialTpTarget, mark, frac),
+            );
+            repo.markDelivered(id, ok);
+            if (!ok) health.telegramFail();
+          }
+        }
+      }
+    }
+
     const hit = pos.side === "long" ? mark <= pos.stop : mark >= pos.stop;
     if (!hit) continue;
 

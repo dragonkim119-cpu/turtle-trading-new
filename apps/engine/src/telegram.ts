@@ -100,6 +100,22 @@ export function fmtStopHit(
   ].join("\n");
 }
 
+export function fmtPartialTp(
+  symbol: string,
+  timeframe: Timeframe,
+  side: "long" | "short",
+  target: number,
+  mark: number,
+  fraction: number,
+): string {
+  return [
+    `🟡 부분 익절 도달 — ${symbol} · ${timeframe.toUpperCase()}`,
+    `${side === "long" ? "롱" : "숏"} 1R 목표 도달 — 물량 ${Math.round(fraction * 100)}% 익절 권고`,
+    `목표 ${nf(target)} / 마크가격 ${nf(mark)}`,
+    `남은 물량은 트레일링 스톱으로 계속 관리`,
+  ].join("\n");
+}
+
 export function fmtEngineAlert(msg: string): string {
   return `🚨 엔진 경보\n${msg}`;
 }

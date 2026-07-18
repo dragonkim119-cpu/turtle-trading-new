@@ -26,10 +26,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid position" }, { status: 400 });
   }
   const repo = getRepo();
-  if (repo.getOpenPosition(b.symbol.toUpperCase(), b.timeframe)) {
+  const symbol = b.symbol.toUpperCase();
+  if (repo.getOpenPosition(symbol, b.timeframe)) {
     return NextResponse.json({ error: "이미 해당 심볼/타임프레임에 열린 포지션이 있습니다" }, { status: 409 });
   }
-  const id = repo.openPosition({ ...b, symbol: b.symbol.toUpperCase() });
+  // Compute the partial take-profit target from the registered risk (|entry-stop|)
+  // and the symbol's partialTp config, so the stop monitor can alert at 1R.
+  const params = repo.getParams(symbol, b.timeframe);
+  let partialTpTarget: number | null = null;
+  if (params.partialTp) {
+    const risk = Math.abs(b.entryPrice - b.stop);
+    partialTpTarget =
+      b.side === "long"
+        ? b.entryPrice + params.partialTp.atR * risk
+        : b.entryPrice - params.partialTp.atR * risk;
+  }
+  const id = repo.openPosition({ ...b, symbol, partialTpTarget });
   return NextResponse.json({ id });
 }
 

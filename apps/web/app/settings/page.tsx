@@ -8,6 +8,7 @@ const NOTIF_LABELS: [string, string][] = [
   ["notif:stop", "손절 도달"],
   ["notif:trail", "스톱 갱신"],
   ["notif:blocked", "필터 차단 알림"],
+  ["notif:partial", "부분 익절 (1R 도달)"],
   ["notif:news", "키워드 속보"],
 ];
 

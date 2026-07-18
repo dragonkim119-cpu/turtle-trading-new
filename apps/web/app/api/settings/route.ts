@@ -12,6 +12,7 @@ const KEYS = [
   "notif:stop",
   "notif:trail",
   "notif:blocked",
+  "notif:partial",
   "notif:news",
 ] as const;
 

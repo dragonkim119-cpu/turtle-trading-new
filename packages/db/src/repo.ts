@@ -26,6 +26,8 @@ export interface PositionRow {
   closedAt: number | null;
   closePrice: number | null;
   closeReason: string | null;
+  partialTpTarget: number | null;
+  partialDone: number;
 }
 
 export interface NewsRow {
@@ -127,10 +129,11 @@ export class Repo {
     entryPrice: number;
     qty: number;
     stop: number;
+    partialTpTarget?: number | null;
   }): number {
     const res = this.db
       .prepare(
-        "INSERT INTO positions(symbol,timeframe,side,entryPrice,qty,stop,stopHistory,openedAt) VALUES(?,?,?,?,?,?,?,?)",
+        "INSERT INTO positions(symbol,timeframe,side,entryPrice,qty,stop,stopHistory,openedAt,partialTpTarget) VALUES(?,?,?,?,?,?,?,?,?)",
       )
       .run(
         p.symbol,
@@ -141,8 +144,12 @@ export class Repo {
         p.stop,
         JSON.stringify([{ stop: p.stop, at: Date.now() }]),
         Date.now(),
+        p.partialTpTarget ?? null,
       );
     return Number(res.lastInsertRowid);
+  }
+  markPartialDone(id: number): void {
+    this.db.prepare("UPDATE positions SET partialDone=1 WHERE id=?").run(id);
   }
   updateStop(id: number, newStop: number): void {
     const row = this.db.prepare("SELECT stopHistory FROM positions WHERE id=?").get(id) as
