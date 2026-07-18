@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 
 const KEYS = [
   "equity",
+  "riskPct",
+  "portfolioGate",
   "newsKeywords",
   "notif:entry",
   "notif:exit",

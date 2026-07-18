@@ -5,3 +5,4 @@ export * from "./sizing.js";
 export * from "./signals.js";
 export * from "./backtest.js";
 export * from "./features.js";
+export * from "./portfolio.js";

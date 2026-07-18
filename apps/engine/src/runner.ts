@@ -1,8 +1,40 @@
-import { featureSnapshot, judgeClose, type PosCtx, type Timeframe } from "@turtle/core";
+import {
+  DEFAULT_PORTFOLIO_GATE,
+  evaluatePortfolioGate,
+  featureSnapshot,
+  judgeClose,
+  type GateResult,
+  type PortfolioGateConfig,
+  type PosCtx,
+  type Side,
+  type Timeframe,
+} from "@turtle/core";
 import type { Repo } from "@turtle/db";
 import { lastClosedOpenTime, type BinanceClient } from "./binance.js";
-import { fmtEvent, fmtPartialTp, fmtStopHit, type TelegramSender } from "./telegram.js";
+import { computePortfolioState } from "./portfolioState.js";
+import { fmtEvent, fmtGate, fmtPartialTp, fmtStopHit, type TelegramSender } from "./telegram.js";
 import type { Health } from "./health.js";
+
+/** Read portfolio gate config from settings JSON (fallback to defaults). */
+function gateConfig(repo: Repo): PortfolioGateConfig {
+  const raw = repo.getSetting("portfolioGate");
+  if (!raw) return DEFAULT_PORTFOLIO_GATE;
+  try {
+    return { ...DEFAULT_PORTFOLIO_GATE, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_PORTFOLIO_GATE;
+  }
+}
+
+/** Evaluate the portfolio gate for a prospective entry using live DB state. */
+function evaluateEntryGate(repo: Repo, dir: Side, riskPct: number): GateResult {
+  const equity = Number(repo.getSetting("equity") ?? 0);
+  if (equity <= 0) {
+    return { demote: false, halveRisk: false, reasons: [], warnings: [] };
+  }
+  const state = computePortfolioState(repo, equity, riskPct, Date.now());
+  return evaluatePortfolioGate(dir, state, gateConfig(repo));
+}
 
 const CANDLE_FETCH = 320; // covers EMA200 + VWAP(30d on 4h = 180 bars) with margin
 
@@ -82,15 +114,22 @@ export async function processSymbol(
 
     const events = judgeClose(pos, window, params, funding);
     for (const ev of events) {
-      // Capture a feature snapshot at entry candles for future meta-labeling.
+      // Capture a feature snapshot + evaluate the portfolio gate for entries.
       let snapshot: unknown = null;
+      let gate: GateResult | null = null;
       if (ev.type === "ENTRY_LONG" || ev.type === "ENTRY_SHORT") {
         const dir = ev.type === "ENTRY_LONG" ? "long" : "short";
         snapshot = featureSnapshot(dir, window, window.length - 1, params, funding);
+        gate = evaluateEntryGate(repo, dir, params.riskPct);
       }
-      const id = repo.insertSignal(symbol, tf, ev.type, openTime, ev, snapshot);
+
+      // Store gate result alongside the event payload (for web display).
+      const payload = gate ? { ...ev, gate } : ev;
+      const id = repo.insertSignal(symbol, tf, ev.type, openTime, payload, snapshot);
       if (id === null) continue; // duplicate — already handled
-      log(`${symbol} ${tf} ${ev.type} @candle ${new Date(openTime).toISOString()}`);
+      log(
+        `${symbol} ${tf} ${ev.type}${gate?.demote ? " [강등]" : ""} @candle ${new Date(openTime).toISOString()}`,
+      );
 
       // Apply position side-effects for registered positions.
       if (ev.type === "TRAIL_UPDATE" && open) {
@@ -100,15 +139,18 @@ export async function processSymbol(
       const kind = EVENT_NOTIF_KIND[ev.type];
       if (kind && notifyEnabled(repo, kind)) {
         const equity = Number(repo.getSetting("equity") ?? 0) || null;
-        const ok = await telegram.send(
-          fmtEvent(ev, {
-            symbol,
-            timeframe: tf,
-            equity,
-            riskPct: params.riskPct,
-            stopMult: params.stopMult,
-          }),
-        );
+        let msg = fmtEvent(ev, {
+          symbol,
+          timeframe: tf,
+          equity,
+          riskPct: params.riskPct,
+          stopMult: params.stopMult,
+        });
+        if (gate && (gate.reasons.length || gate.warnings.length)) {
+          const { prefix, suffix } = fmtGate(gate.reasons, gate.warnings);
+          msg = prefix + msg + suffix;
+        }
+        const ok = await telegram.send(msg);
         repo.markDelivered(id, ok);
         if (!ok) health.telegramFail();
       }

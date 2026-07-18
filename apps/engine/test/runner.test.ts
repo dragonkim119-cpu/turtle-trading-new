@@ -71,6 +71,26 @@ describe("processSymbol", () => {
     expect(telegram.send).toHaveBeenCalledTimes(1);
   });
 
+  it("demotes entry when portfolio open-risk cap is hit", async () => {
+    const now = Math.floor(Date.now() / H4) * H4 + 60_000;
+    const lastClosed = lastClosedOpenTime("4h", now);
+    const candles = mkCandles(300, lastClosed, true);
+    const { repo, telegram, deps } = mkDeps(candles);
+    const p = repo.getParams("BTCUSDT", "4h");
+    p.filters.adx.on = false;
+    repo.upsertParams("BTCUSDT", "4h", p);
+    // equity 1000; an existing ETH position with 6% open risk hits the cap
+    repo.setSetting("equity", "1000");
+    repo.openPosition({ symbol: "ETHUSDT", timeframe: "1d", side: "long", entryPrice: 100, qty: 1, stop: 40 });
+
+    await processSymbol(deps, "BTCUSDT", "4h", now);
+
+    const sig = repo.listSignals().find((s) => s.event === "ENTRY_LONG")!;
+    expect((sig.payload as { gate?: { demote: boolean } }).gate?.demote).toBe(true);
+    expect(telegram.send.mock.calls[0][0]).toContain("진입 비권장");
+    expect(telegram.send.mock.calls[0][0]).toContain("오픈 리스크 캡");
+  });
+
   it("no signal without breakout", async () => {
     const now = Math.floor(Date.now() / H4) * H4 + 60_000;
     const lastClosed = lastClosedOpenTime("4h", now);

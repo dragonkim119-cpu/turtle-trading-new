@@ -126,6 +126,15 @@ export function fmtEngineAlert(msg: string): string {
   return `🚨 엔진 경보\n${msg}`;
 }
 
+/** Prefix/suffix lines for a portfolio-gated entry signal (demotion + warnings). */
+export function fmtGate(reasons: string[], warnings: string[]): { prefix: string; suffix: string } {
+  const prefix = reasons.length
+    ? `⚠️ 진입 비권장 — ${reasons.join(" · ")}\n`
+    : "";
+  const suffix = warnings.length ? `\n⚠️ ${warnings.join(" · ")}` : "";
+  return { prefix, suffix };
+}
+
 export function fmtNews(source: string, title: string, link: string, keywords: string[]): string {
   return [`📰 속보 [${keywords.join(",")}] — ${source}`, title, link].join("\n");
 }

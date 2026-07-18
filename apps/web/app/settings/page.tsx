@@ -123,6 +123,8 @@ export default function SettingsPage() {
         </p>
       </div>
 
+      <PortfolioGateCard settings={settings} setSettings={setSettings} put={put} />
+
       <div className="card">
         <h2>속보 키워드 (쉼표 구분)</h2>
         <input
@@ -132,6 +134,72 @@ export default function SettingsPage() {
           placeholder="트럼프,관세,연준,금리,전쟁,지정학"
         />
       </div>
+    </div>
+  );
+}
+
+const GATE_DEFAULTS = { maxOpenRiskPct: 6, maxSameDir: 3, dailyLossPct: 4, monthlyLossPct: 10 };
+const GATE_FIELDS: [keyof typeof GATE_DEFAULTS, string][] = [
+  ["maxOpenRiskPct", "동시 오픈 리스크 캡 (%)"],
+  ["maxSameDir", "방향 편중 경고 (개)"],
+  ["dailyLossPct", "일 손실 스로틀 (%)"],
+  ["monthlyLossPct", "월 손실 스로틀 (%)"],
+];
+
+function PortfolioGateCard({
+  settings,
+  setSettings,
+  put,
+}: {
+  settings: Record<string, string | null>;
+  setSettings: React.Dispatch<React.SetStateAction<Record<string, string | null>>>;
+  put: (patch: Record<string, string>) => void;
+}) {
+  const parsed = (() => {
+    try {
+      return { ...GATE_DEFAULTS, ...(settings["portfolioGate"] ? JSON.parse(settings["portfolioGate"]!) : {}) };
+    } catch {
+      return { ...GATE_DEFAULTS };
+    }
+  })();
+
+  const update = (key: keyof typeof GATE_DEFAULTS, value: number) => {
+    const next = { ...parsed, [key]: value };
+    setSettings((s) => ({ ...s, portfolioGate: JSON.stringify(next) }));
+    put({ portfolioGate: JSON.stringify(next) });
+  };
+
+  return (
+    <div className="card">
+      <h2>포트폴리오 리스크 규칙</h2>
+      <div className="row">
+        <div style={{ flex: 1 }}>
+          <label>거래당 리스크 % (전역 기준)</label>
+          <input
+            type="number"
+            step="0.1"
+            value={settings["riskPct"] ?? "2"}
+            onChange={(e) => setSettings((s) => ({ ...s, riskPct: e.target.value }))}
+            onBlur={(e) => put({ riskPct: e.target.value })}
+          />
+        </div>
+      </div>
+      {GATE_FIELDS.map(([key, label]) => (
+        <div key={key} className="row" style={{ marginTop: 4 }}>
+          <div style={{ flex: 1 }}>
+            <label>{label}</label>
+            <input
+              type="number"
+              step="0.1"
+              value={parsed[key]}
+              onChange={(e) => update(key, Number(e.target.value))}
+            />
+          </div>
+        </div>
+      ))}
+      <p className="muted" style={{ marginTop: 6 }}>
+        초과 시 신규 진입 신호를 &quot;비권장&quot;으로 강등(차단 아님). 신호 탭에 실시간 상태 표시.
+      </p>
     </div>
   );
 }

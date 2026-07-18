@@ -35,9 +35,23 @@ function label(event: string) {
   return EVENT_LABEL[event] ?? { text: event, cls: "muted" };
 }
 
+interface PortfolioResp {
+  state: {
+    openRiskPct: number;
+    longCount: number;
+    shortCount: number;
+    realizedDailyPct: number;
+    realizedMonthlyPct: number;
+  };
+  cfg: { maxOpenRiskPct: number; maxSameDir: number; dailyLossPct: number; monthlyLossPct: number };
+  longGate: { demote: boolean; reasons: string[]; warnings: string[] };
+  shortGate: { demote: boolean; reasons: string[]; warnings: string[] };
+}
+
 export default function SignalsPage() {
   const [signals, setSignals] = useState<Sig[]>([]);
   const [health, setHealth] = useState<{ status: string } | null>(null);
+  const [pf, setPf] = useState<PortfolioResp | null>(null);
 
   useEffect(() => {
     fetch("/api/signals?limit=200")
@@ -46,6 +60,10 @@ export default function SignalsPage() {
     fetch("/api/status")
       .then((r) => r.json())
       .then((d) => setHealth(d.health));
+    fetch("/api/portfolio")
+      .then((r) => r.json())
+      .then(setPf)
+      .catch(() => {});
   }, []);
 
   return (
@@ -58,6 +76,50 @@ export default function SignalsPage() {
           </span>
         )}
       </h1>
+
+      {pf && (
+        <div className="card">
+          <h2>포트폴리오 리스크</h2>
+          <div className="row spread">
+            <span className="muted">오픈 리스크</span>
+            <span className="mono">
+              <b
+                style={{
+                  color:
+                    pf.state.openRiskPct >= pf.cfg.maxOpenRiskPct ? "var(--red)" : "var(--text)",
+                }}
+              >
+                {pf.state.openRiskPct.toFixed(1)}%
+              </b>{" "}
+              / {pf.cfg.maxOpenRiskPct.toFixed(1)}%
+            </span>
+          </div>
+          <div className="row spread">
+            <span className="muted">방향 (롱/숏)</span>
+            <span className="mono">
+              {pf.state.longCount} / {pf.state.shortCount}
+            </span>
+          </div>
+          <div className="row spread">
+            <span className="muted">실현 손익 (일/월)</span>
+            <span className="mono">
+              <span style={{ color: pf.state.realizedDailyPct < 0 ? "var(--red)" : "var(--green)" }}>
+                {pf.state.realizedDailyPct.toFixed(1)}%
+              </span>{" "}
+              /{" "}
+              <span style={{ color: pf.state.realizedMonthlyPct < 0 ? "var(--red)" : "var(--green)" }}>
+                {pf.state.realizedMonthlyPct.toFixed(1)}%
+              </span>
+            </span>
+          </div>
+          {(pf.longGate.demote || pf.shortGate.demote) && (
+            <p className="muted" style={{ marginTop: 6 }}>
+              <span className="badge amber">신규 진입 비권장</span>{" "}
+              {[...new Set([...pf.longGate.reasons, ...pf.shortGate.reasons])].join(" · ")}
+            </p>
+          )}
+        </div>
+      )}
       <div className="card">
         {signals.length === 0 && <p className="muted">아직 신호 없음. 엔진이 봉 마감마다 감시 중.</p>}
         {signals.map((s) => {
