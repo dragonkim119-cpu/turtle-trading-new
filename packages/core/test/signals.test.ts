@@ -15,6 +15,8 @@ const P: Params = {
   stopMult: 2,
   emaPeriod: 3,
   riskPct: 2,
+  entryBufferAtr: 0,
+  partialTp: null,
   filters: {
     adx: { on: false, period: 14, min: 20 },
     volume: { on: false, period: 20, mult: 1.5 },
@@ -120,6 +122,45 @@ describe("judgeClose holding", () => {
     const exit = judgeClose(pos, [c(18, 14, 15), c(17, 13, 14), c(19, 15, 19)], P, null);
     expect(exit).toEqual([{ type: "EXIT_SHORT", price: 19 }]);
   });
+});
+
+describe("entry buffer", () => {
+  it("blocks a marginal breakout but passes a decisive one", () => {
+    // marginal: close 13.5, prior 3-bar high 13, ATR ~2 -> buffer 0.5*ATR ~1 -> need >14
+    const marginal = [c(11, 9, 10), c(12, 10, 11), c(13, 11, 12), c(13.5, 12, 13.5)];
+    const withBuf: Params = { ...P, entryBufferAtr: 0.5 };
+    expect(judgeClose(FLAT, marginal, withBuf, null)).toHaveLength(0);
+    expect(judgeClose(FLAT, marginal, P, null)).toHaveLength(1); // no buffer -> entry
+    const decisive = [c(11, 9, 10), c(12, 10, 11), c(13, 11, 12), c(20, 12, 20)];
+    expect(judgeClose(FLAT, decisive, withBuf, null)).toHaveLength(1);
+  });
+});
+
+describe("partial take-profit (backtest)", () => {
+  function trendCandles(): Candle[] {
+    const candles: Candle[] = [];
+    let t = 0;
+    for (let i = 0; i < 6; i++) candles.push(c(10, 9, 9.5, 100, t++));
+    for (let i = 0; i < 15; i++) candles.push(c(11 + i, 10 + i, 10.8 + i, 100, t++));
+    for (let i = 0; i < 8; i++) candles.push(c(25 - 2 * i, 23 - 2 * i, 23.5 - 2 * i, 100, t++));
+    return candles;
+  }
+
+  it("banks partial R and reduces final trade R vs full hold in a winning trend", () => {
+    const full = runBacktest(trendCandles(), P, 1000);
+    const partial = runBacktest(
+      trendCandles(),
+      { ...P, partialTp: { atR: 1, fraction: 0.5 } },
+      1000,
+    );
+    expect(full.trades.length).toBe(partial.trades.length);
+    expect(partial.trades[0].rMultiple).toBeGreaterThan(0);
+    // half banked at 1R, half rides: total R must be less than full hold in a big trend
+    expect(partial.trades[0].rMultiple).toBeLessThan(full.trades[0].rMultiple);
+    // but at least the banked portion (0.5R) is guaranteed
+    expect(partial.trades[0].rMultiple).toBeGreaterThanOrEqual(0.5);
+  });
+
 });
 
 describe("runBacktest", () => {

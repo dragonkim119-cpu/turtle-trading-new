@@ -60,6 +60,9 @@ export function runBacktest(
   let entryTime = 0;
   let stop = 0;
   let initRisk = 0; // price distance at entry
+  let partialDone = false;
+  let realizedR = 0; // R already banked by partial take-profit
+  let openFraction = 1; // fraction of the position still open
 
   const closeTrade = (
     exitTime: number,
@@ -68,7 +71,7 @@ export function runBacktest(
   ) => {
     const dir = side === "long" ? 1 : -1;
     const move = (exitPrice - entryPrice) * dir;
-    const r = initRisk > 0 ? move / initRisk : 0;
+    const r = realizedR + (initRisk > 0 ? (move / initRisk) * openFraction : 0);
     const pnlPct = (params.riskPct / 100) * r;
     equity *= 1 + pnlPct;
     peak = Math.max(peak, equity);
@@ -90,7 +93,7 @@ export function runBacktest(
     const c = candles[i];
 
     if (side !== null) {
-      // 1) intrabar stop
+      // 1) intrabar stop (checked before partial TP — conservative when both hit in one bar)
       if (side === "long" && c.low <= stop) {
         closeTrade(c.openTime, stop, "stop");
         continue;
@@ -98,6 +101,18 @@ export function runBacktest(
       if (side === "short" && c.high >= stop) {
         closeTrade(c.openTime, stop, "stop");
         continue;
+      }
+      // 1.5) partial take-profit at entry ± atR × initRisk
+      const ptp = params.partialTp;
+      if (ptp && !partialDone) {
+        const target =
+          side === "long" ? entryPrice + ptp.atR * initRisk : entryPrice - ptp.atR * initRisk;
+        const reached = side === "long" ? c.high >= target : c.low <= target;
+        if (reached) {
+          realizedR += ptp.atR * ptp.fraction;
+          openFraction -= ptp.fraction;
+          partialDone = true;
+        }
       }
       // 2) close-based channel exit
       const xb = exitBands[i];
@@ -124,8 +139,9 @@ export function runBacktest(
     if (eb === null || emaV === null || atrV === null) continue;
 
     let dir: Side | null = null;
-    if (c.close > eb.upper && c.close > emaV) dir = "long";
-    else if (c.close < eb.lower && c.close < emaV) dir = "short";
+    const buf = (params.entryBufferAtr ?? 0) * atrV;
+    if (c.close > eb.upper + buf && c.close > emaV) dir = "long";
+    else if (c.close < eb.lower - buf && c.close < emaV) dir = "short";
     if (dir === null) continue;
 
     const cfg = {
@@ -140,6 +156,9 @@ export function runBacktest(
     entryTime = c.openTime;
     initRisk = params.stopMult * atrV;
     stop = dir === "long" ? c.close - initRisk : c.close + initRisk;
+    partialDone = false;
+    realizedR = 0;
+    openFraction = 1;
   }
 
   const wins = trades.filter((t) => t.rMultiple > 0);

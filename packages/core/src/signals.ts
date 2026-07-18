@@ -43,7 +43,8 @@ export function judgeClose(
     // Flat: look for entries. Need EMA + entry band + ATR available.
     if (entryBand === null || emaV === null || atrV === null) return events;
 
-    if (close > entryBand.upper && close > emaV) {
+    const buf = (params.entryBufferAtr ?? 0) * atrV;
+    if (close > entryBand.upper + buf && close > emaV) {
       const checks = evaluateFilters("long", candles, i, funding, params.filters);
       if (allPassed(checks)) {
         events.push({
@@ -56,7 +57,7 @@ export function judgeClose(
       } else {
         events.push({ type: "ENTRY_BLOCKED", dir: "long", price: close, filters: checks });
       }
-    } else if (close < entryBand.lower && close < emaV) {
+    } else if (close < entryBand.lower - buf && close < emaV) {
       const checks = evaluateFilters("short", candles, i, funding, params.filters);
       if (allPassed(checks)) {
         events.push({

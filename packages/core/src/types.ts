@@ -17,6 +17,13 @@ export interface FilterConfig {
   funding: { on: boolean; maxAbs: number }; // maxAbs as rate, e.g. 0.001 = 0.1%
 }
 
+export interface PartialTp {
+  /** take partial profit when price reaches entry + atR * initialRisk */
+  atR: number; // e.g. 1.0
+  /** fraction of the position closed at the target, 0..1 */
+  fraction: number; // e.g. 0.5
+}
+
 export interface Params {
   entryPeriod: number; // Donchian entry channel (default 20)
   exitPeriod: number; // Donchian exit channel (default 10)
@@ -24,6 +31,10 @@ export interface Params {
   stopMult: number; // default 2.0
   emaPeriod: number; // default 200
   riskPct: number; // default 2 (% of equity)
+  /** breakout must exceed the channel by this many ATRs (0 = plain breakout) */
+  entryBufferAtr: number;
+  /** partial profit taking; null = off (classic turtle) */
+  partialTp: PartialTp | null;
   filters: FilterConfig;
 }
 
@@ -34,6 +45,8 @@ export const DEFAULT_PARAMS: Params = {
   stopMult: 2.0,
   emaPeriod: 200,
   riskPct: 2,
+  entryBufferAtr: 0,
+  partialTp: null,
   filters: {
     adx: { on: true, period: 14, min: 20 },
     volume: { on: true, period: 20, mult: 1.5 },
