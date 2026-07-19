@@ -27,6 +27,11 @@ pnpm --filter @turtle/web dev          # 웹 (기본 포트 3000)
 pnpm backtest BTCUSDT 1d 2022-01-01    # 필터 조합 비교표 (구조 파라미터는 클래식 고정)
 pnpm backtest:sweep BTCUSDT 4h 2023-01-01  # 진입/청산/손절/버퍼/부분익절 그리드 스윕
 pnpm backtest:crossval                 # 후보 파라미터 vs baseline 다심볼·다기간 교차검증
+
+# --use-saved-params: 웹 차트 ⚙ 파라미터 시트에서 저장한 심볼별 DB 파라미터로 백테스트
+pnpm backtest BTCUSDT 4h 2024-01-01 --use-saved-params       # 단일 결과 (클래식 비교표 대신)
+pnpm backtest:sweep BTCUSDT 4h 2023-01-01 --use-saved-params # 저장된 필터 위에서 구조 그리드 스윕
+pnpm backtest:crossval --use-saved-params                    # 데이터셋별 저장_PF/승률/MDD 컬럼 추가
 ```
 
 웹 빌드: `cd apps/web && npx next build`. 로컬(Windows)은 symlink 권한 없어 standalone 비활성 — Docker 빌드만 `NEXT_STANDALONE=1`.
@@ -78,3 +83,5 @@ Railway: Dockerfile 자동 빌드. Volume `/data` 마운트 + 환경변수 4개.
 - 부분 익절은 **알림 전용** — 엔진이 1R 도달 알림만 보냄, 실제 분할 청산·잔여 수량 조정은 미자동화(사용자가 거래소에서 직접). 단 본전 스톱 이동은 엔진이 DB stop을 자동 갱신(이후 손절/트레일링 판정에 반영) — 옵션 on일 때만
 - 스윕 상위 조합은 **과최적화 주의**. `backtest:crossval`로 다른 기간/심볼 교차검증 후 채택
 - 실전 전 1~2주 신호 관찰 운용 권장
+- `--use-saved-params`는 funding/OI 필터를 여전히 강제 off (과거 데이터 부재 제약은 그대로) — 구조·나머지 필터만 DB 값 반영
+- 차트 페이지 **1H 탭**은 표시 전용(추세 확인용) — 코어 `Timeframe`은 `"4h" | "1d"`뿐이라 1h용 전략 파라미터가 없음. 오버레이는 심볼의 4h 파라미터를 차용, 신호·포지션 생성 없음
