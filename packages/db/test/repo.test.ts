@@ -28,6 +28,18 @@ describe("Repo", () => {
     expect(r.getParams("BTCUSDT", "1d").entryPeriod).toBe(20);
   });
 
+  it("params saved before a new filter (e.g. oi) was added still merge in the new default", () => {
+    const r = repo();
+    // simulate a row saved by an older app version whose filters object lacks `oi`
+    const old = structuredClone(DEFAULT_PARAMS) as Partial<typeof DEFAULT_PARAMS>;
+    const oldFilters = old.filters as Partial<(typeof DEFAULT_PARAMS)["filters"]>;
+    delete oldFilters.oi;
+    r.upsertParams("ETHUSDT", "4h", old as typeof DEFAULT_PARAMS);
+    const loaded = r.getParams("ETHUSDT", "4h");
+    expect(loaded.filters.oi).toEqual(DEFAULT_PARAMS.filters.oi);
+    expect(loaded.filters.adx).toEqual(DEFAULT_PARAMS.filters.adx);
+  });
+
   it("signal unique key dedupe", () => {
     const r = repo();
     const id1 = r.insertSignal("BTCUSDT", "4h", "ENTRY_LONG", 1000, { price: 1 });

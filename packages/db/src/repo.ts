@@ -79,11 +79,26 @@ export class Repo {
 
   // --- params ---
   getParams(symbol: string, timeframe: Timeframe): Params {
+    const defaults = structuredClone(DEFAULT_PARAMS);
     const r = this.db
       .prepare("SELECT json FROM params WHERE symbol=? AND timeframe=?")
       .get(symbol, timeframe) as { json: string } | undefined;
-    if (!r) return structuredClone(DEFAULT_PARAMS);
-    return { ...structuredClone(DEFAULT_PARAMS), ...JSON.parse(r.json) };
+    if (!r) return defaults;
+    const stored = JSON.parse(r.json) as Partial<Params>;
+    // Merge nested objects field-by-field: a param row saved before a new
+    // filter (e.g. oi) or sub-field was added would otherwise silently drop it.
+    const sf: Partial<Params["filters"]> = stored.filters ?? {};
+    return {
+      ...defaults,
+      ...stored,
+      filters: {
+        adx: { ...defaults.filters.adx, ...sf.adx },
+        volume: { ...defaults.filters.volume, ...sf.volume },
+        vwap: { ...defaults.filters.vwap, ...sf.vwap },
+        funding: { ...defaults.filters.funding, ...sf.funding },
+        oi: { ...defaults.filters.oi, ...sf.oi },
+      },
+    };
   }
   upsertParams(symbol: string, timeframe: Timeframe, params: Params): void {
     this.db
