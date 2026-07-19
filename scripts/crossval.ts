@@ -3,14 +3,23 @@
  * multiple symbols and periods to check robustness (overfit guard).
  * Usage: pnpm backtest:crossval
  * Edit CANDIDATE / DATASETS below to change what is tested.
+ *
+ * With --use-saved-params: adds a per-dataset column using that symbol's
+ * DB-stored params (the web chart's ⚙ sheet) as a third comparison alongside
+ * baseline/candidate. Falls back to DEFAULT_PARAMS if nothing was ever saved
+ * for that symbol/timeframe. OI/funding still force off (no backtest history).
+ * Usage: pnpm backtest:crossval --use-saved-params
  */
+import path from "node:path";
 import {
   DEFAULT_PARAMS,
   runBacktest,
   DEFAULT_COSTS,
   type Candle,
   type Params,
+  type Timeframe,
 } from "../packages/core/src/index.js";
+import { openDb, Repo } from "../packages/db/src/index.js";
 
 const BASE = "https://fapi.binance.com";
 
@@ -80,6 +89,16 @@ function candidateBE(): Params {
   return p;
 }
 
+function loadSavedParams(symbol: string, timeframe: Timeframe): Params {
+  const dbPath = process.env.DB_PATH ?? path.join(process.cwd(), "data", "turtle.db");
+  const repo = new Repo(openDb(dbPath));
+  const p = repo.getParams(symbol, timeframe);
+  // no historical series for these — same constraint as baseline/candidate
+  p.filters.funding.on = false;
+  p.filters.oi.on = false;
+  return p;
+}
+
 // symbol, timeframe, start, end
 const DATASETS: [string, string, string, string][] = [
   ["BTCUSDT", "4h", "2021-01-01", "2023-01-01"], // out-of-sample period (sweep used 2023-2025)
@@ -91,7 +110,11 @@ const DATASETS: [string, string, string, string][] = [
 ];
 
 async function main() {
+  const useSavedParams = process.argv.slice(2).includes("--use-saved-params");
   console.log("교차검증: 부분익절(20/15/버퍼0.3) — 본전이동 off vs on, 기준선(20/10/2.0/off) 대비\n");
+  if (useSavedParams) {
+    console.log("--use-saved-params: 데이터셋별 DB 저장 파라미터를 추가 컬럼으로 비교합니다.\n");
+  }
   const summary: Record<string, unknown>[] = [];
   const tsSummary: Record<string, unknown>[] = [];
 
@@ -116,7 +139,7 @@ async function main() {
     const c = runBacktest(candles, candidate(), 10_000_000, DEFAULT_COSTS).stats;
     const be = runBacktest(candles, candidateBE(), 10_000_000, DEFAULT_COSTS).stats;
     const fmtPf = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : "inf");
-    summary.push({
+    const row: Record<string, unknown> = {
       데이터셋: `${symbol} ${tf} ${start.slice(0, 4)}~${end.slice(0, 4)}`,
       "기준_PF": fmtPf(b.profitFactor),
       "익절_승률": (c.winRate * 100).toFixed(1),
@@ -128,7 +151,14 @@ async function main() {
       "본전효과PF": Number.isFinite(be.profitFactor) && Number.isFinite(c.profitFactor)
         ? (be.profitFactor - c.profitFactor >= 0 ? "+" : "") + (be.profitFactor - c.profitFactor).toFixed(2)
         : "-",
-    });
+    };
+    if (useSavedParams && (tf === "4h" || tf === "1d")) {
+      const saved = runBacktest(candles, loadSavedParams(symbol, tf), 10_000_000, DEFAULT_COSTS).stats;
+      row["저장_승률"] = (saved.winRate * 100).toFixed(1);
+      row["저장_PF"] = fmtPf(saved.profitFactor);
+      row["저장_MDD"] = (saved.mdd * 100).toFixed(1);
+    }
+    summary.push(row);
 
     // Time-stop gate: adopted DEFAULT_PARAMS with vs without timeStop (bars 8/12).
     const def = () => {

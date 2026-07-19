@@ -3,8 +3,16 @@
  * Usage: pnpm backtest BTCUSDT 4h 2023-01-01 [end]
  * Fetches Binance USDT-M futures klines and prints a filter-combination
  * comparison table (turtle base vs each filter vs all filters).
+ *
+ * With --use-saved-params: runs a single backtest using the symbol's
+ * DB-stored params (the ones set via the web chart's ⚙ sheet) instead of
+ * the classic-turtle comparison table. OI/funding filters still force off —
+ * their history isn't available for backtesting (see CLAUDE.md).
+ * Usage: pnpm backtest BTCUSDT 4h 2023-01-01 [end] --use-saved-params
  */
-import { DEFAULT_COSTS, DEFAULT_PARAMS, runBacktest, type Candle, type Params } from "../packages/core/src/index.js";
+import path from "node:path";
+import { DEFAULT_COSTS, DEFAULT_PARAMS, runBacktest, type Candle, type Params, type Timeframe } from "../packages/core/src/index.js";
+import { openDb, Repo } from "../packages/db/src/index.js";
 
 const BASE = "https://fapi.binance.com";
 
@@ -56,9 +64,22 @@ function withFilters(overrides: Partial<Record<keyof Params["filters"], boolean>
   return p;
 }
 
+function loadSavedParams(symbol: string, timeframe: Timeframe): Params {
+  const dbPath = process.env.DB_PATH ?? path.join(process.cwd(), "data", "turtle.db");
+  const repo = new Repo(openDb(dbPath));
+  const p = repo.getParams(symbol, timeframe);
+  // no historical series for these — same constraint as the classic combo table
+  p.filters.funding.on = false;
+  p.filters.oi.on = false;
+  return p;
+}
+
 async function main() {
-  const [symbol = "BTCUSDT", interval = "4h", startStr = "2023-01-01", endStr] =
-    process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+  const useSavedParams = rawArgs.includes("--use-saved-params");
+  const [symbol = "BTCUSDT", interval = "4h", startStr = "2023-01-01", endStr] = rawArgs.filter(
+    (a) => !a.startsWith("--"),
+  );
   const start = Date.parse(startStr + "T00:00:00Z");
   const end = endStr ? Date.parse(endStr + "T00:00:00Z") : Date.now();
   if (Number.isNaN(start)) throw new Error(`bad start date: ${startStr}`);
@@ -70,6 +91,29 @@ async function main() {
     console.warn(
       `⚠ 캔들 ${candles.length}개 — EMA${DEFAULT_PARAMS.emaPeriod} 계산에 부족. 시작일을 앞당기세요 (최소 ${DEFAULT_PARAMS.emaPeriod + 50}봉 권장).`,
     );
+  }
+
+  if (useSavedParams) {
+    if (interval !== "4h" && interval !== "1d") {
+      throw new Error(`--use-saved-params requires interval 4h or 1d, got ${interval}`);
+    }
+    const params = loadSavedParams(symbol, interval);
+    const { stats } = runBacktest(candles, params, 10_000_000, DEFAULT_COSTS);
+    console.log(`저장된 파라미터 (${symbol} ${interval}):`);
+    console.log(JSON.stringify(params, null, 2));
+    console.table([
+      {
+        거래수: stats.n,
+        "승률%": (stats.winRate * 100).toFixed(1),
+        평균R: stats.avgR.toFixed(2),
+        PF: Number.isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : "inf",
+        "MDD%": (stats.mdd * 100).toFixed(1),
+        "최종자산(1000만→)": Math.round(stats.endEquity).toLocaleString(),
+      },
+    ]);
+    console.log(`주: 수수료 taker ${DEFAULT_COSTS.takerPct}% + 슬리피지 ${DEFAULT_COSTS.slippagePct}% (편도) 반영.`);
+    console.log("주: 펀딩비/OI 필터는 과거 데이터 부재로 backtest에서 강제 off.");
+    return;
   }
 
   const combos: [string, Params][] = [

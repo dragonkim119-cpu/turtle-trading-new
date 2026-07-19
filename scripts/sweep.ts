@@ -6,14 +6,23 @@
  * Auxiliary filters are OFF for a clean structural comparison (funding has no
  * historical series anyway). Partial TP is backtest-only for now — the live
  * engine does not yet manage split positions.
+ *
+ * With --use-saved-params: base params come from the symbol's DB-stored
+ * params (the web chart's ⚙ sheet) instead of DEFAULT_PARAMS — so the
+ * structural grid sweeps on top of whatever filters/thresholds are already
+ * saved for that symbol. OI/funding still force off (no backtest history).
+ * Usage: pnpm backtest:sweep BTCUSDT 4h 2023-01-01 [end] --use-saved-params
  */
+import path from "node:path";
 import {
   DEFAULT_PARAMS,
   runBacktest,
   DEFAULT_COSTS,
   type Candle,
   type Params,
+  type Timeframe,
 } from "../packages/core/src/index.js";
+import { openDb, Repo } from "../packages/db/src/index.js";
 
 const BASE = "https://fapi.binance.com";
 
@@ -59,32 +68,60 @@ const PARTIAL: (null | { atR: number; fraction: number; moveStopToBreakeven: boo
   { atR: 1, fraction: 0.5, moveStopToBreakeven: true },
 ];
 
+function loadSavedParams(symbol: string, timeframe: Timeframe): Params {
+  const dbPath = process.env.DB_PATH ?? path.join(process.cwd(), "data", "turtle.db");
+  const repo = new Repo(openDb(dbPath));
+  const p = repo.getParams(symbol, timeframe);
+  // no historical series for these — same constraint as the structural sweep
+  p.filters.funding.on = false;
+  p.filters.oi.on = false;
+  return p;
+}
+
 function makeParams(
+  base: Params,
   entryPeriod: number,
   exitPeriod: number,
   stopMult: number,
   entryBufferAtr: number,
   partialTp: { atR: number; fraction: number; moveStopToBreakeven: boolean } | null,
 ): Params {
-  const p = structuredClone(DEFAULT_PARAMS);
+  const p = structuredClone(base);
   p.entryPeriod = entryPeriod;
   p.exitPeriod = exitPeriod;
   p.stopMult = stopMult;
   p.entryBufferAtr = entryBufferAtr;
   p.partialTp = partialTp;
-  p.filters.adx.on = false;
-  p.filters.volume.on = false;
-  p.filters.vwap.on = false;
-  p.filters.funding.on = false;
   return p;
 }
 
 async function main() {
-  const [symbol = "BTCUSDT", interval = "4h", startStr = "2023-01-01", endStr] =
-    process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+  const useSavedParams = rawArgs.includes("--use-saved-params");
+  const [symbol = "BTCUSDT", interval = "4h", startStr = "2023-01-01", endStr] = rawArgs.filter(
+    (a) => !a.startsWith("--"),
+  );
   const start = Date.parse(startStr + "T00:00:00Z");
   const end = endStr ? Date.parse(endStr + "T00:00:00Z") : Date.now();
   if (Number.isNaN(start)) throw new Error(`bad start date: ${startStr}`);
+
+  if (useSavedParams && interval !== "4h" && interval !== "1d") {
+    throw new Error(`--use-saved-params requires interval 4h or 1d, got ${interval}`);
+  }
+  const base: Params = useSavedParams
+    ? loadSavedParams(symbol, interval as Timeframe)
+    : (() => {
+        const p = structuredClone(DEFAULT_PARAMS);
+        p.filters.adx.on = false;
+        p.filters.volume.on = false;
+        p.filters.vwap.on = false;
+        p.filters.funding.on = false;
+        p.filters.oi.on = false;
+        return p;
+      })();
+  if (useSavedParams) {
+    console.log(`저장된 파라미터 기준 (${symbol} ${interval}) — 필터:`, JSON.stringify(base.filters));
+  }
 
   console.log(`Fetching ${symbol} ${interval} from ${startStr}...`);
   const candles = await fetchKlines(symbol, interval, start, end);
@@ -110,7 +147,7 @@ async function main() {
       for (const s of STOP)
         for (const b of BUFFER)
           for (const pt of PARTIAL) {
-            const { stats } = runBacktest(candles, makeParams(e, x, s, b, pt), 10_000_000, DEFAULT_COSTS);
+            const { stats } = runBacktest(candles, makeParams(base, e, x, s, b, pt), 10_000_000, DEFAULT_COSTS);
             rows.push({
               진입: e,
               청산: x,
