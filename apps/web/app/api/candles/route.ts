@@ -6,8 +6,9 @@ import {
   ema,
   rollingVwap,
   type Candle,
-  type Timeframe,
 } from "@turtle/core";
+
+type ChartTimeframe = "1h" | "4h" | "1d";
 import { getRepo } from "../../../lib/db.js";
 import { requireAuth } from "../../../lib/api.js";
 
@@ -19,16 +20,19 @@ export async function GET(req: NextRequest) {
 
   const sp = req.nextUrl.searchParams;
   const symbol = (sp.get("symbol") ?? "BTCUSDT").toUpperCase();
-  const tf = (sp.get("tf") ?? "4h") as Timeframe;
+  const tf = (sp.get("tf") ?? "4h") as ChartTimeframe;
   const limitRaw = Number(sp.get("limit") ?? 500);
 
   // Validate before interpolating into the upstream URL (param-injection guard).
   if (!/^[A-Z0-9]{5,20}$/.test(symbol)) {
     return NextResponse.json({ error: "invalid symbol" }, { status: 400 });
   }
-  if (tf !== "4h" && tf !== "1d") {
+  if (tf !== "4h" && tf !== "1d" && tf !== "1h") {
     return NextResponse.json({ error: "invalid timeframe" }, { status: 400 });
   }
+  // 1h has no trading strategy of its own (Timeframe = "4h" | "1d" only) — it's
+  // a display-only trend view, so overlays borrow the 4h symbol's params.
+  const paramsTf = tf === "1h" ? "4h" : tf;
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 1000) : 500;
 
   const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${tf}&limit=${limit}`;
@@ -47,7 +51,7 @@ export async function GET(req: NextRequest) {
   }));
 
   const repo = getRepo();
-  const params = repo.getParams(symbol, tf);
+  const params = repo.getParams(symbol, paramsTf);
   const closes = candles.map((c) => c.close);
 
   // funding (best-effort)
@@ -76,7 +80,10 @@ export async function GET(req: NextRequest) {
       entryChannel: donchian(candles, params.entryPeriod),
       exitChannel: donchian(candles, params.exitPeriod),
       ema: ema(closes, params.emaPeriod),
-      vwap: rollingVwap(candles, params.filters.vwap.bars * (tf === "4h" ? 6 : 1)),
+      vwap: rollingVwap(
+        candles,
+        params.filters.vwap.bars * (tf === "1h" ? 24 : tf === "4h" ? 6 : 1),
+      ),
       atr: atr(candles, params.atrPeriod),
       adx: adx(candles, params.filters.adx.period),
     },

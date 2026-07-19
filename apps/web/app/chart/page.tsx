@@ -19,7 +19,7 @@ interface CandlesResp {
 export default function ChartPage() {
   const [symbols, setSymbols] = useState<string[]>([]);
   const [symbol, setSymbol] = useState("BTCUSDT");
-  const [tf, setTf] = useState<"4h" | "1d">("4h");
+  const [tf, setTf] = useState<"1h" | "4h" | "1d">("4h");
   const [resp, setResp] = useState<CandlesResp | null>(null);
   const [signals, setSignals] = useState<ChartData["signals"]>([]);
   const [position, setPosition] = useState<ChartData["position"]>(null);
@@ -79,7 +79,7 @@ export default function ChartPage() {
           ))}
         </select>
         <div className="seg" style={{ flex: 1 }}>
-          {(["4h", "1d"] as const).map((x) => (
+          {(["1h", "4h", "1d"] as const).map((x) => (
             <button key={x} className={tf === x ? "on" : ""} onClick={() => setTf(x)}>
               {x.toUpperCase()}
             </button>

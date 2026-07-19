@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   type IChartApi,
@@ -47,7 +47,10 @@ export interface ChartData {
   position: ChartPosition | null;
 }
 
-const t = (ms: number): Time => (ms / 1000) as Time;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+// lightweight-charts renders time marks using UTC getters, so shift the
+// timestamp by KST's offset to make the UTC-formatted label read as KST.
+const t = (ms: number): Time => ((ms + KST_OFFSET_MS) / 1000) as Time;
 
 function lineData(candles: Candle[], values: (number | null)[]) {
   const out: { time: Time; value: number }[] = [];
@@ -58,9 +61,27 @@ function lineData(candles: Candle[], values: (number | null)[]) {
   return out;
 }
 
+interface OhlcInfo {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+const LEGEND: { name: string; color: string; dashed?: boolean }[] = [
+  { name: "진입상단", color: "rgba(38,166,154,0.9)" },
+  { name: "진입하단", color: "rgba(239,83,80,0.9)" },
+  { name: "청산하단", color: "rgba(38,166,154,0.9)", dashed: true },
+  { name: "청산상단", color: "rgba(239,83,80,0.9)", dashed: true },
+  { name: "EMA", color: "#e8a33d" },
+  { name: "VWAP", color: "#4a90d9" },
+];
+
 export default function TurtleChart({ data }: { data: ChartData }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const [hovered, setHovered] = useState<OhlcInfo | null>(null);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -97,35 +118,58 @@ export default function TurtleChart({ data }: { data: ChartData }) {
       })),
     );
 
-    const mk = (color: string, width: 1 | 2, style = LineStyle.Solid, title = "") =>
+    const last = candles[candles.length - 1];
+    if (last) {
+      setHovered({ time: last.openTime, open: last.open, high: last.high, low: last.low, close: last.close });
+    }
+    chart.subscribeCrosshairMove((param) => {
+      const bar = param.seriesData.get(candleSeries) as
+        | { open: number; high: number; low: number; close: number }
+        | undefined;
+      if (!bar || param.time === undefined) {
+        if (last) {
+          setHovered({ time: last.openTime, open: last.open, high: last.high, low: last.low, close: last.close });
+        }
+        return;
+      }
+      setHovered({
+        time: (param.time as number) * 1000,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+      });
+    });
+
+    const mk = (color: string, width: 2 | 3, style = LineStyle.Solid) =>
       chart.addLineSeries({
         color,
         lineWidth: width,
         lineStyle: style,
         priceLineVisible: false,
         lastValueVisible: false,
-        title,
+        title: "",
         crosshairMarkerVisible: false,
       });
 
     // Donchian entry channel (green/red band edges)
-    mk("rgba(38,166,154,0.7)", 1, LineStyle.Solid, "진입상단").setData(
+    mk("rgba(38,166,154,0.7)", 2, LineStyle.Solid).setData(
       lineData(candles, data.overlays.entryChannel.map((b) => b?.upper ?? null)),
     );
-    mk("rgba(239,83,80,0.7)", 1, LineStyle.Solid, "진입하단").setData(
+    mk("rgba(239,83,80,0.7)", 2, LineStyle.Solid).setData(
       lineData(candles, overlays.entryChannel.map((b) => b?.lower ?? null)),
     );
-    // Exit channel dashed
-    mk("rgba(122,129,148,0.6)", 1, LineStyle.Dashed, "청산하단").setData(
+    // Exit channel dashed (상단=숏 청산 트리거, 하단=롱 청산 트리거)
+    mk("rgba(38,166,154,0.7)", 2, LineStyle.Dashed).setData(
       lineData(candles, overlays.exitChannel.map((b) => b?.lower ?? null)),
     );
-    mk("rgba(122,129,148,0.6)", 1, LineStyle.Dashed, "청산상단").setData(
+    mk("rgba(239,83,80,0.7)", 2, LineStyle.Dashed).setData(
       lineData(candles, overlays.exitChannel.map((b) => b?.upper ?? null)),
     );
     // EMA 200
-    mk("#e8a33d", 2, LineStyle.Solid, "EMA").setData(lineData(candles, overlays.ema));
+    mk("#e8a33d", 3, LineStyle.Solid).setData(lineData(candles, overlays.ema));
     // Rolling VWAP
-    mk("#4a90d9", 2, LineStyle.Solid, "VWAP").setData(lineData(candles, overlays.vwap));
+    mk("#4a90d9", 3, LineStyle.Solid).setData(lineData(candles, overlays.vwap));
 
     // Signal markers
     const markers: SeriesMarker<Time>[] = [];
@@ -167,5 +211,88 @@ export default function TurtleChart({ data }: { data: ChartData }) {
     };
   }, [data]);
 
-  return <div ref={ref} style={{ width: "100%", height: "58vh", minHeight: 320 }} />;
+  const up = hovered ? hovered.close >= hovered.open : true;
+
+  const resetAutoScale = () => {
+    chartRef.current?.priceScale("right").applyOptions({ autoScale: true });
+  };
+
+  return (
+    <div style={{ position: "relative", width: "100%", height: "58vh", minHeight: 320 }}>
+      <div ref={ref} style={{ width: "100%", height: "100%" }} />
+      <div
+        style={{
+          position: "absolute",
+          top: hovered ? 28 : 6,
+          left: 8,
+          zIndex: 10,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "2px 10px",
+          fontSize: 11,
+          fontFamily: "monospace",
+          color: "#7a8194",
+          background: "rgba(11,14,20,0.6)",
+          padding: "2px 6px",
+          borderRadius: 4,
+          pointerEvents: "none",
+        }}
+      >
+        {LEGEND.map((l) => (
+          <span key={l.name} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span
+              style={{
+                display: "inline-block",
+                width: 10,
+                height: 0,
+                borderTop: `2px ${l.dashed ? "dashed" : "solid"} ${l.color}`,
+              }}
+            />
+            {l.name}
+          </span>
+        ))}
+      </div>
+      <button
+        onClick={resetAutoScale}
+        title="Y축 자동 스케일"
+        style={{
+          position: "absolute",
+          bottom: 6,
+          right: 8,
+          zIndex: 10,
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1,
+          color: "#7a8194",
+          background: "rgba(11,14,20,0.7)",
+          border: "1px solid #232838",
+          borderRadius: 4,
+          padding: "4px 7px",
+          cursor: "pointer",
+        }}
+      >
+        A
+      </button>
+      {hovered && (
+        <div
+          style={{
+            position: "absolute",
+            top: 6,
+            left: 8,
+            zIndex: 10,
+            fontSize: 14,
+            fontFamily: "monospace",
+            color: up ? "#26a69a" : "#ef5350",
+            background: "rgba(11,14,20,0.6)",
+            padding: "2px 6px",
+            borderRadius: 4,
+            pointerEvents: "none",
+          }}
+        >
+          O {hovered.open.toLocaleString()} H {hovered.high.toLocaleString()} L{" "}
+          {hovered.low.toLocaleString()} C {hovered.close.toLocaleString()}
+        </div>
+      )}
+    </div>
+  );
 }
