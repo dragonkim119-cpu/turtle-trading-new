@@ -11,6 +11,7 @@ const NOTIF_LABELS: [string, string][] = [
   ["notif:partial", "부분 익절 (1R 도달)"],
   ["notif:volspike", "1분 급변 경보"],
   ["notif:stopnear", "손절선 임박 선경고"],
+  ["notif:timestop", "타임스톱 (N봉 내 +1R 미도달)"],
   ["notif:news", "키워드 속보"],
 ];
 

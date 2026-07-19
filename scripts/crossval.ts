@@ -93,6 +93,7 @@ const DATASETS: [string, string, string, string][] = [
 async function main() {
   console.log("교차검증: 부분익절(20/15/버퍼0.3) — 본전이동 off vs on, 기준선(20/10/2.0/off) 대비\n");
   const summary: Record<string, unknown>[] = [];
+  const tsSummary: Record<string, unknown>[] = [];
 
   for (const [symbol, tf, start, end] of DATASETS) {
     let candles: Candle[];
@@ -128,6 +129,28 @@ async function main() {
         ? (be.profitFactor - c.profitFactor >= 0 ? "+" : "") + (be.profitFactor - c.profitFactor).toFixed(2)
         : "-",
     });
+
+    // Time-stop gate: adopted DEFAULT_PARAMS with vs without timeStop (bars 8/12).
+    const def = () => {
+      const p = structuredClone(DEFAULT_PARAMS);
+      p.filters.adx.on = false;
+      p.filters.volume.on = false;
+      p.filters.vwap.on = false;
+      p.filters.funding.on = false;
+      return p;
+    };
+    const noTs = runBacktest(candles, def(), 10_000_000, DEFAULT_COSTS).stats;
+    const ts8 = runBacktest(candles, { ...def(), timeStop: { bars: 8 } }, 10_000_000, DEFAULT_COSTS).stats;
+    const ts12 = runBacktest(candles, { ...def(), timeStop: { bars: 12 } }, 10_000_000, DEFAULT_COSTS).stats;
+    tsSummary.push({
+      데이터셋: `${symbol} ${tf} ${start.slice(0, 4)}~${end.slice(0, 4)}`,
+      "기본_PF": fmtPf(noTs.profitFactor),
+      "기본_MDD": (noTs.mdd * 100).toFixed(1),
+      "TS8_PF": fmtPf(ts8.profitFactor),
+      "TS8_MDD": (ts8.mdd * 100).toFixed(1),
+      "TS12_PF": fmtPf(ts12.profitFactor),
+      "TS12_MDD": (ts12.mdd * 100).toFixed(1),
+    });
   }
 
   console.table(summary);
@@ -140,6 +163,14 @@ async function main() {
   console.log("본전이동은 보통 MDD를 낮추고 손실거래를 무손실로 바꿈 — 큰 추세 잔여물량을 일찍 털 위험은 트레이드오프.");
   console.log("판정: MDD 개선 + PF 유지/개선이면 채택.");
   void beMddBetter;
+
+  console.log("\n═══ 타임스톱 게이트 (기본값 vs +타임스톱 8/12봉) ═══");
+  console.table(tsSummary);
+  const tsGood = tsSummary.filter(
+    (r) => Number(r["TS12_PF"]) >= Number(r["기본_PF"]) || Number(r["TS8_PF"]) >= Number(r["기본_PF"]),
+  ).length;
+  console.log(`요약: ${tsSummary.length}개 중 타임스톱(8 or 12봉)이 PF 유지/개선 ${tsGood}개.`);
+  console.log("판정: 다수 데이터셋에서 PF 개선 + MDD 감소면 채택. 아니면 기본 off 유지(옵션만).");
 }
 
 main().catch((e) => {

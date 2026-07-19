@@ -150,6 +150,20 @@ export function fmtStopNear(
   ].join("\n");
 }
 
+export function fmtTimeStop(
+  symbol: string,
+  timeframe: Timeframe,
+  side: "long" | "short",
+  bars: number,
+  price: number,
+): string {
+  return [
+    `⏱ 타임스톱 — ${symbol} · ${timeframe.toUpperCase()}`,
+    `${side === "long" ? "롱" : "숏"} 진입 후 ${bars}봉간 +1R 미도달 — 청산 권고`,
+    `종가 ${nf(price)} · 횡보 물림 해소`,
+  ].join("\n");
+}
+
 export function fmtEngineAlert(msg: string): string {
   return `🚨 엔진 경보\n${msg}`;
 }

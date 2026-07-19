@@ -26,6 +26,11 @@ export interface PartialTp {
   moveStopToBreakeven: boolean;
 }
 
+export interface TimeStop {
+  /** exit if the trade has not reached +1R within this many bars */
+  bars: number; // e.g. 12
+}
+
 export interface Params {
   entryPeriod: number; // Donchian entry channel (default 20)
   exitPeriod: number; // Donchian exit channel (default 10)
@@ -37,6 +42,8 @@ export interface Params {
   entryBufferAtr: number;
   /** partial profit taking; null = off (classic turtle) */
   partialTp: PartialTp | null;
+  /** time-based exit; null = off. Backtest-gated before default-on. */
+  timeStop: TimeStop | null;
   filters: FilterConfig;
 }
 
@@ -51,6 +58,7 @@ export const DEFAULT_PARAMS: Params = {
   // bank half at 1R. breakeven-stop OFF by default: cross-val showed it lifts win
   // rate + trims MDD but slightly lowers PF (clips recoveries) — opt in per symbol.
   partialTp: { atR: 1, fraction: 0.5, moveStopToBreakeven: false },
+  timeStop: null, // off by default; adopt only if backtest gate passes
 
   filters: {
     adx: { on: true, period: 14, min: 20 },

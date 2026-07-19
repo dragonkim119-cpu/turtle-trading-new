@@ -8,7 +8,7 @@ export interface Trade {
   entryPrice: number;
   exitTime: number;
   exitPrice: number;
-  exitReason: "stop" | "channel";
+  exitReason: "stop" | "channel" | "time";
   rMultiple: number; // pnl / initial risk
   pnlPct: number; // pnl as % of equity at entry (risk-normalized sizing)
 }
@@ -80,11 +80,13 @@ export function runBacktest(
   let realizedR = 0; // R already banked by partial take-profit (net of slippage)
   let feeR = 0; // accumulated fee cost expressed in R (entry + partial fills)
   let openFraction = 1; // fraction of the position still open
+  let barsInTrade = 0; // bars elapsed since entry
+  let reached1R = false; // whether price ever reached +1R
 
   const closeTrade = (
     exitTime: number,
     exitPrice: number,
-    exitReason: "stop" | "channel",
+    exitReason: "stop" | "channel" | "time",
   ) => {
     const dir = side === "long" ? 1 : -1;
     const effExit = exitPrice * (1 - slip * dir); // adverse slippage on exit fill
@@ -155,6 +157,14 @@ export function runBacktest(
         if (side === "long" && xb.lower > stop) stop = xb.lower;
         if (side === "short" && xb.upper < stop) stop = xb.upper;
       }
+      // 4) time stop: exit if +1R never reached within N bars
+      barsInTrade++;
+      const oneRTarget = side === "long" ? entryPrice + initRisk : entryPrice - initRisk;
+      if (side === "long" ? c.high >= oneRTarget : c.low <= oneRTarget) reached1R = true;
+      if (params.timeStop && !reached1R && barsInTrade >= params.timeStop.bars) {
+        closeTrade(c.openTime, c.close, "time");
+        continue;
+      }
       continue;
     }
 
@@ -187,6 +197,8 @@ export function runBacktest(
     partialDone = false;
     realizedR = 0;
     openFraction = 1;
+    barsInTrade = 0;
+    reached1R = false;
   }
 
   const wins = trades.filter((t) => t.rMultiple > 0);

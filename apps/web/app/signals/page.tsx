@@ -34,6 +34,7 @@ function label(event: string) {
   if (event.startsWith("STOP_NEAR")) return { text: "손절 임박", cls: "amber" };
   if (event.startsWith("PARTIAL_TP")) return { text: "부분 익절", cls: "amber" };
   if (event === "VOL_SPIKE") return { text: "1분 급변", cls: "amber" };
+  if (event.startsWith("TIME_STOP")) return { text: "타임스톱", cls: "muted" };
   return EVENT_LABEL[event] ?? { text: event, cls: "muted" };
 }
 

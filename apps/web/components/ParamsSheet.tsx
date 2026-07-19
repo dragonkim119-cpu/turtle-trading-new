@@ -215,6 +215,35 @@ export default function ParamsSheet({
           )}
         </div>
 
+        <h2 style={{ marginTop: 16 }}>타임스톱 (선택)</h2>
+        <div className="list-item">
+          <div className="row spread">
+            <b style={{ fontSize: 14 }}>타임스톱</b>
+            <button
+              className={p.timeStop ? "" : "secondary"}
+              onClick={() => setP({ ...p, timeStop: p.timeStop ? null : { bars: 12 } })}
+              style={{ padding: "5px 12px" }}
+            >
+              {p.timeStop ? "ON" : "OFF"}
+            </button>
+          </div>
+          {p.timeStop && (
+            <div className="row">
+              <div style={{ flex: 1 }}>
+                <label>N봉 내 +1R 미도달 시 청산</label>
+                <input
+                  type="number"
+                  value={p.timeStop.bars}
+                  onChange={(e) => setP({ ...p, timeStop: { bars: num(e.target.value) } })}
+                />
+              </div>
+            </div>
+          )}
+          <p className="muted" style={{ marginTop: 4, fontSize: 11 }}>
+            교차검증: 약세·횡보장 개선하나 강한 추세장에선 느린 승자를 잘라 PF↓ (6개 중 3개만 유지/개선). 기본 off — 심볼별 opt-in.
+          </p>
+        </div>
+
         <div className="row" style={{ marginTop: 16 }}>
           <button className="secondary" style={{ flex: 1 }} onClick={onClose}>
             취소

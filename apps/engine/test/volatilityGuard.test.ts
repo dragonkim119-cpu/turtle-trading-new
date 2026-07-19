@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { openDb, Repo } from "@turtle/db";
 import type { Candle } from "@turtle/core";
 import { inCooldown, runVolGuard, type GuardDeps } from "../src/volatilityGuard.js";
-import { checkStops, processSymbol, type RunnerDeps } from "../src/runner.js";
+import { checkStops, checkTimeStop, processSymbol, type RunnerDeps } from "../src/runner.js";
 import { Health } from "../src/health.js";
 
 function oneMin(closes: number[], startMs: number): Candle[] {
@@ -93,6 +93,77 @@ describe("checkStops stop-proximity pre-warning", () => {
     d.repo.openPosition({ symbol: "BTCUSDT", timeframe: "4h", side: "long", entryPrice: 100, qty: 1, stop: 95 });
     d.binance.fetchMarkPrice.mockResolvedValue(99); // dist 4 > 1.5
     await checkStops(d.runnerDeps);
+    expect(d.telegram.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("checkTimeStop", () => {
+  function tsDeps() {
+    const repo = new Repo(openDb(":memory:"));
+    const telegram = { send: vi.fn(async () => true) };
+    const binance = {
+      fetchKlines: vi.fn(async () => []),
+      fetchKlinesRaw: vi.fn(async () => []),
+      fetchMarkPrice: vi.fn(async () => 0),
+      fetchFunding: vi.fn(async () => null),
+    };
+    const health = new Health(repo, telegram);
+    const runnerDeps: RunnerDeps = { repo, binance, telegram, health };
+    return { repo, telegram, runnerDeps };
+  }
+
+  const openPos = {
+    id: 1,
+    symbol: "BTCUSDT",
+    timeframe: "4h" as const,
+    side: "long" as const,
+    entryPrice: 100,
+    qty: 1,
+    stop: 95,
+    status: "open" as const,
+    stopHistory: [],
+    openedAt: 0,
+    closedAt: null,
+    closePrice: null,
+    closeReason: null,
+    partialTpTarget: null,
+    partialDone: 0,
+    initialRisk: 5, // 1R target = 105
+    realizedR: null,
+  };
+
+  function flat(n: number): Candle[] {
+    // n bars from openTime 0, never reaching 105
+    return Array.from({ length: n }, (_, i) => ({
+      openTime: i * 60_000,
+      open: 101,
+      high: 102,
+      low: 100,
+      close: 101,
+      volume: 100,
+    }));
+  }
+
+  it("fires once after N bars without +1R, dedupes on re-check", async () => {
+    const d = tsDeps();
+    const w = flat(13); // 12 bars since entry bar
+    await checkTimeStop(d.runnerDeps, openPos, w, 12);
+    await checkTimeStop(d.runnerDeps, openPos, w, 12);
+    const alerts = d.telegram.send.mock.calls.filter((c) => c[0].includes("타임스톱"));
+    expect(alerts).toHaveLength(1);
+  });
+
+  it("does not fire if +1R was reached", async () => {
+    const d = tsDeps();
+    const w = flat(13);
+    w[5] = { ...w[5], high: 110 }; // reached 1R (>=105) at bar 5
+    await checkTimeStop(d.runnerDeps, openPos, w, 12);
+    expect(d.telegram.send).not.toHaveBeenCalled();
+  });
+
+  it("does not fire before N bars elapse", async () => {
+    const d = tsDeps();
+    await checkTimeStop(d.runnerDeps, openPos, flat(6), 12); // only 5 bars since entry
     expect(d.telegram.send).not.toHaveBeenCalled();
   });
 });

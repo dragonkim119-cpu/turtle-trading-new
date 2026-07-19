@@ -17,6 +17,7 @@ const KEYS = [
   "notif:partial",
   "notif:volspike",
   "notif:stopnear",
+  "notif:timestop",
   "notif:news",
   "volGuard",
 ] as const;

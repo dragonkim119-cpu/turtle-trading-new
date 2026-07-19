@@ -17,6 +17,7 @@ const P: Params = {
   riskPct: 2,
   entryBufferAtr: 0,
   partialTp: null,
+  timeStop: null,
   filters: {
     adx: { on: false, period: 14, min: 20 },
     volume: { on: false, period: 20, mult: 1.5 },
@@ -222,6 +223,33 @@ describe("runBacktest", () => {
     const b = runBacktest(candles, P, 1000, { takerPct: 0, slippagePct: 0 });
     expect(b.stats.endEquity).toBeCloseTo(a.stats.endEquity, 6);
     expect(b.trades[0].rMultiple).toBeCloseTo(a.trades[0].rMultiple, 6);
+  });
+
+  // exitPeriod 100 on a short series => exit bands stay null (no channel/trailing),
+  // isolating the time stop from stop-hit interference.
+  const PT = { ...P, exitPeriod: 100 };
+
+  it("time stop closes a stagnant trade that never reaches +1R", () => {
+    const candles: Candle[] = [];
+    let t = 0;
+    for (let i = 0; i < 6; i++) candles.push(c(10, 9, 9.5, 100, t++));
+    candles.push(c(12, 10, 12, 100, t++)); // breakout entry ~12
+    // flat bars just above entry, never reaching +1R and never near the fixed stop
+    for (let i = 0; i < 10; i++) candles.push(c(12.3, 11.7, 12, 100, t++));
+    const withTime = runBacktest(candles, { ...PT, timeStop: { bars: 4 } }, 1000);
+    expect(withTime.trades).toHaveLength(1);
+    expect(withTime.trades[0].exitReason).toBe("time");
+  });
+
+  it("time stop does NOT fire once +1R is reached", () => {
+    const candles: Candle[] = [];
+    let t = 0;
+    for (let i = 0; i < 6; i++) candles.push(c(10, 9, 9.5, 100, t++));
+    candles.push(c(12, 10, 12, 100, t++)); // entry ~12
+    candles.push(c(20, 12, 19, 100, t++)); // spikes well past +1R -> reached1R
+    for (let i = 0; i < 10; i++) candles.push(c(19.3, 18.7, 19, 100, t++)); // then flat
+    const withTime = runBacktest(candles, { ...PT, timeStop: { bars: 3 } }, 1000);
+    expect(withTime.trades[0]?.exitReason).not.toBe("time");
   });
 
   it("volume filter reduces trade count on noisy series", () => {

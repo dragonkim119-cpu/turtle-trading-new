@@ -19,6 +19,7 @@ import {
   fmtPartialTp,
   fmtStopHit,
   fmtStopNear,
+  fmtTimeStop,
   type TelegramSender,
 } from "./telegram.js";
 import type { Health } from "./health.js";
@@ -174,7 +175,52 @@ export async function processSymbol(
         if (!ok) health.telegramFail();
       }
     }
+
+    // Time stop (opt-in): registered position that hasn't reached +1R within N bars.
+    if (open && params.timeStop) {
+      await checkTimeStop(deps, open, window, params.timeStop.bars);
+    }
     repo.setState(stateKey, String(openTime));
+  }
+}
+
+/**
+ * Emit a one-time time-stop exit recommendation when an open position has gone
+ * `bars` closed candles since entry without ever reaching +1R. Mirrors the
+ * backtest time-stop rule. Dedupe: unique per position id.
+ */
+export async function checkTimeStop(
+  deps: RunnerDeps,
+  open: NonNullable<ReturnType<Repo["getOpenPosition"]>>,
+  window: import("@turtle/core").Candle[],
+  bars: number,
+): Promise<void> {
+  const { repo, telegram, health } = deps;
+  const initRisk = open.initialRisk ?? Math.abs(open.entryPrice - open.stop);
+  if (initRisk <= 0) return;
+
+  // Candles at/after entry registration; the first is the entry bar (bar 0).
+  const since = window.filter((c) => c.openTime >= open.openedAt);
+  const barsSince = since.length - 1;
+  if (barsSince < bars) return;
+
+  const oneR = open.side === "long" ? open.entryPrice + initRisk : open.entryPrice - initRisk;
+  const reached1R = since.some((c) => (open.side === "long" ? c.high >= oneR : c.low <= oneR));
+  if (reached1R) return;
+
+  const last = window[window.length - 1];
+  const id = repo.insertSignal(open.symbol, open.timeframe, `TIME_STOP:${open.id}`, open.openedAt, {
+    positionId: open.id,
+    bars: barsSince,
+    price: last.close,
+  });
+  if (id === null) return;
+  if (repo.getSetting("notif:timestop") !== "off") {
+    const ok = await telegram.send(
+      fmtTimeStop(open.symbol, open.timeframe, open.side, barsSince, last.close),
+    );
+    repo.markDelivered(id, ok);
+    if (!ok) health.telegramFail();
   }
 }
 
