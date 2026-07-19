@@ -7,11 +7,13 @@ import { checkStops, processSymbol, type RunnerDeps } from "./runner.js";
 import { every, scheduleAtCloses } from "./scheduler.js";
 import { pollRss } from "./rss.js";
 import { runVolGuard } from "./volatilityGuard.js";
+import { pollMacro } from "./macro.js";
 
 const TIMEFRAMES: Timeframe[] = ["4h", "1d"];
 const STOP_INTERVAL_MS = 60_000;
 const VOLGUARD_INTERVAL_MS = 60_000;
 const RSS_INTERVAL_MS = 10 * 60_000;
+const MACRO_INTERVAL_MS = 6 * 60 * 60_000; // 4x/day is plenty for daily macro closes
 
 function main() {
   const dbPath = process.env.DB_PATH ?? "data/turtle.db";
@@ -56,6 +58,8 @@ function main() {
   every(VOLGUARD_INTERVAL_MS, () => runVolGuard({ repo, binance, telegram, health, log }), (e) => log(`volguard: ${e.message}`));
   every(RSS_INTERVAL_MS, () => pollRss({ repo, telegram, log }), (e) => log(`rss: ${e.message}`));
   pollRss({ repo, telegram, log }).catch((e) => log(`rss boot: ${e.message}`));
+  every(MACRO_INTERVAL_MS, () => pollMacro({ repo, log }), (e) => log(`macro: ${e.message}`));
+  pollMacro({ repo, log }).catch((e) => log(`macro boot: ${e.message}`));
 
   log(`engine started — db=${dbPath}, watchlist=${repo.getWatchlist().join(",")}`);
 }

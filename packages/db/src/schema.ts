@@ -64,6 +64,13 @@ CREATE TABLE IF NOT EXISTS engine_state (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS macro_snapshots (
+  symbol TEXT NOT NULL,
+  date TEXT NOT NULL,
+  value REAL NOT NULL,
+  createdAt INTEGER NOT NULL,
+  PRIMARY KEY (symbol, date)
+);
 CREATE INDEX IF NOT EXISTS idx_signals_recent ON signals (createdAt DESC);
 CREATE INDEX IF NOT EXISTS idx_news_recent ON news_items (createdAt DESC);
 `;

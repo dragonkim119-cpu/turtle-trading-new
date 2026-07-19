@@ -265,4 +265,20 @@ export class Repo {
       .prepare("INSERT INTO engine_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
       .run(key, value);
   }
+
+  // --- macro snapshots (display-only: DXY/VIX/10Y) ---
+  upsertMacro(symbol: string, date: string, value: number): void {
+    this.db
+      .prepare(
+        "INSERT INTO macro_snapshots(symbol,date,value,createdAt) VALUES(?,?,?,?) ON CONFLICT(symbol,date) DO UPDATE SET value=excluded.value",
+      )
+      .run(symbol, date, value, Date.now());
+  }
+  /** Latest N daily values for a macro symbol, oldest→newest (for a sparkline). */
+  getMacroSeries(symbol: string, limit = 30): { date: string; value: number }[] {
+    const rows = this.db
+      .prepare("SELECT date, value FROM macro_snapshots WHERE symbol=? ORDER BY date DESC LIMIT ?")
+      .all(symbol, limit) as { date: string; value: number }[];
+    return rows.reverse();
+  }
 }
