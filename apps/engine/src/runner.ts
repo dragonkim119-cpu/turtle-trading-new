@@ -101,9 +101,14 @@ export async function processSymbol(
 
   let candles;
   let funding: number | null;
+  let oiChangePct: number | null = null;
   try {
     candles = await binance.fetchKlines(symbol, tf, CANDLE_FETCH);
     funding = await binance.fetchFunding(symbol);
+    // OI only fetched when the filter is enabled for this symbol/timeframe.
+    if (repo.getParams(symbol, tf).filters.oi.on) {
+      oiChangePct = await binance.fetchOiChangePct(symbol);
+    }
     health.apiOk();
   } catch (e) {
     await health.apiFail(`klines ${symbol} ${tf}: ${(e as Error).message}`);
@@ -132,14 +137,14 @@ export async function processSymbol(
       ? { side: open.side, entryPrice: open.entryPrice, stop: open.stop }
       : { side: null };
 
-    const events = judgeClose(pos, window, params, funding);
+    const events = judgeClose(pos, window, params, funding, oiChangePct);
     for (const ev of events) {
       // Capture a feature snapshot + evaluate the portfolio gate for entries.
       let snapshot: unknown = null;
       let gate: GateResult | null = null;
       if (ev.type === "ENTRY_LONG" || ev.type === "ENTRY_SHORT") {
         const dir = ev.type === "ENTRY_LONG" ? "long" : "short";
-        snapshot = featureSnapshot(dir, window, window.length - 1, params, funding);
+        snapshot = featureSnapshot(dir, window, window.length - 1, params, funding, oiChangePct);
         gate = evaluateEntryGate(repo, symbol, dir, params.riskPct);
       }
 

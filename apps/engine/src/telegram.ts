@@ -35,6 +35,7 @@ function fmtFilters(filters: FilterCheck[]): string {
     volume: "거래량",
     vwap: "VWAP",
     funding: "펀딩",
+    oi: "OI",
   };
   return filters
     .map((f) => `${label[f.name]} ${f.passed ? "✅" : "❌"}${f.detail === "off" ? "(off)" : ""}`)

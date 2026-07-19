@@ -13,6 +13,7 @@ export function evaluateFilters(
   i: number,
   funding: number | null,
   cfg: FilterConfig,
+  oiChangePct: number | null = null,
 ): FilterCheck[] {
   const checks: FilterCheck[] = [];
 
@@ -91,6 +92,23 @@ export function evaluateFilters(
     }
   } else {
     checks.push({ name: "funding", passed: true, value: null, detail: "off" });
+  }
+
+  // Open-interest confirmation: a genuine breakout coincides with rising OI
+  // (new money) — for both directions. Null OI (unavailable) passes with a note.
+  if (cfg.oi.on) {
+    if (oiChangePct === null) {
+      checks.push({ name: "oi", passed: true, value: null, detail: "OI 조회 불가 - 통과 처리" });
+    } else {
+      checks.push({
+        name: "oi",
+        passed: oiChangePct >= cfg.oi.minChangePct,
+        value: oiChangePct,
+        detail: `OI 24h ${oiChangePct >= 0 ? "+" : ""}${oiChangePct.toFixed(2)}% (기준 ≥${cfg.oi.minChangePct}%)`,
+      });
+    }
+  } else {
+    checks.push({ name: "oi", passed: true, value: null, detail: "off" });
   }
 
   return checks;

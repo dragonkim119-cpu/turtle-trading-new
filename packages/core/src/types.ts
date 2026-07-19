@@ -15,6 +15,9 @@ export interface FilterConfig {
   volume: { on: boolean; period: number; mult: number };
   vwap: { on: boolean; bars: number };
   funding: { on: boolean; maxAbs: number }; // maxAbs as rate, e.g. 0.001 = 0.1%
+  // OI confirmation: breakout should coincide with rising open interest (new money).
+  // Like funding, no long historical series via free API -> live-only, default off.
+  oi: { on: boolean; minChangePct: number }; // e.g. 0 => require OI change > 0%
 }
 
 export interface PartialTp {
@@ -65,11 +68,12 @@ export const DEFAULT_PARAMS: Params = {
     volume: { on: true, period: 20, mult: 1.5 },
     vwap: { on: true, bars: 30 },
     funding: { on: true, maxAbs: 0.001 },
+    oi: { on: false, minChangePct: 0 }, // off by default; not long-backtestable
   },
 };
 
 export interface FilterCheck {
-  name: "adx" | "volume" | "vwap" | "funding";
+  name: "adx" | "volume" | "vwap" | "funding" | "oi";
   passed: boolean;
   value: number | null;
   detail: string;

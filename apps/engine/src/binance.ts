@@ -8,6 +8,8 @@ export interface BinanceClient {
   fetchKlinesRaw(symbol: string, interval: string, limit: number): Promise<Candle[]>;
   fetchMarkPrice(symbol: string): Promise<number>;
   fetchFunding(symbol: string): Promise<number | null>;
+  /** 24h open-interest change % from openInterestHist (last ~30d only). null if unavailable. */
+  fetchOiChangePct(symbol: string): Promise<number | null>;
 }
 
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
@@ -73,6 +75,21 @@ export function createBinanceClient(): BinanceClient {
         return Number.isFinite(r) ? r : null;
       } catch {
         return null; // funding unavailable -> filter passes with note
+      }
+    },
+    async fetchOiChangePct(symbol) {
+      try {
+        // openInterestHist: oldest→newest. Use 1h period over ~24h window.
+        const rows = (await getJson(
+          `${BASE}/futures/data/openInterestHist?symbol=${symbol}&period=1h&limit=24`,
+        )) as { sumOpenInterest: string }[];
+        if (rows.length < 2) return null;
+        const first = Number(rows[0].sumOpenInterest);
+        const last = Number(rows[rows.length - 1].sumOpenInterest);
+        if (!Number.isFinite(first) || !Number.isFinite(last) || first <= 0) return null;
+        return ((last - first) / first) * 100;
+      } catch {
+        return null; // OI unavailable -> filter passes with note
       }
     },
   };

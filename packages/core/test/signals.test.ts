@@ -23,6 +23,7 @@ const P: Params = {
     volume: { on: false, period: 20, mult: 1.5 },
     vwap: { on: false, bars: 30 },
     funding: { on: false, maxAbs: 0.001 },
+    oi: { on: false, minChangePct: 0 },
   },
 };
 

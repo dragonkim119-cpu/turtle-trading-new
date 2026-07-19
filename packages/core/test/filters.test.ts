@@ -12,13 +12,14 @@ const OFF: FilterConfig = {
   volume: { on: false, period: 20, mult: 1.5 },
   vwap: { on: false, bars: 30 },
   funding: { on: false, maxAbs: 0.001 },
+  oi: { on: false, minChangePct: 0 },
 };
 
 describe("evaluateFilters", () => {
   it("all off -> all pass", () => {
     const candles = [c(1, 0, 1), c(1, 0, 1)];
     const checks = evaluateFilters("long", candles, 1, null, OFF);
-    expect(checks).toHaveLength(4);
+    expect(checks).toHaveLength(5);
     expect(allPassed(checks)).toBe(true);
   });
 
@@ -51,6 +52,20 @@ describe("evaluateFilters", () => {
     const cfg: FilterConfig = { ...OFF, adx: { on: true, period: 14, min: 20 } };
     const candles = [c(1, 0, 1), c(1, 0, 1)];
     expect(allPassed(evaluateFilters("long", candles, 1, null, cfg))).toBe(false);
+  });
+
+  it("oi filter passes on rising OI, blocks on falling, null passes with note", () => {
+    const cfg: FilterConfig = { ...OFF, oi: { on: true, minChangePct: 0 } };
+    const candles = [c(1, 0, 1), c(1, 0, 1)];
+    // rising OI confirms both directions
+    expect(allPassed(evaluateFilters("long", candles, 1, null, cfg, 2.4))).toBe(true);
+    expect(allPassed(evaluateFilters("short", candles, 1, null, cfg, 1.0))).toBe(true);
+    // falling OI blocks (short squeeze / long squeeze risk)
+    expect(allPassed(evaluateFilters("long", candles, 1, null, cfg, -1.5))).toBe(false);
+    // null OI (unavailable) passes with note
+    const checks = evaluateFilters("long", candles, 1, null, cfg, null);
+    expect(allPassed(checks)).toBe(true);
+    expect(checks.find((f) => f.name === "oi")!.detail).toContain("조회 불가");
   });
 });
 

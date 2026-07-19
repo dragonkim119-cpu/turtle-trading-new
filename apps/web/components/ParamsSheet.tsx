@@ -151,6 +151,25 @@ export default function ParamsSheet({
           />
         </FilterRow>
 
+        <FilterRow
+          label="OI 확인 (미결제약정)"
+          on={p.filters.oi.on}
+          setOn={(on) => setP({ ...p, filters: { ...p.filters, oi: { ...p.filters.oi, on } } })}
+        >
+          <label>최소 24h OI 변화 (%)</label>
+          <input
+            type="number"
+            step="0.1"
+            value={p.filters.oi.minChangePct}
+            onChange={(e) =>
+              setP({ ...p, filters: { ...p.filters, oi: { ...p.filters.oi, minChangePct: num(e.target.value) } } })
+            }
+          />
+        </FilterRow>
+        <p className="muted" style={{ margin: "0 0 8px", fontSize: 11 }}>
+          OI 증가 = 신규 자금 유입(진짜 돌파). 무료 API로 과거 ~30일만 조회돼 장기 백테스트 불가 — 실시간 전용·기본 off. 관찰 후 opt-in.
+        </p>
+
         <h2 style={{ marginTop: 16 }}>부분 익절 (승률 개선)</h2>
         <div className="list-item">
           <div className="row spread">

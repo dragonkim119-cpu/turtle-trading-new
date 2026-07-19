@@ -25,6 +25,7 @@ function deps(one: Candle[]) {
     fetchKlinesRaw: vi.fn(async () => one.map((c) => ({ ...c }))),
     fetchMarkPrice: vi.fn(async () => 0),
     fetchFunding: vi.fn(async () => null),
+    fetchOiChangePct: vi.fn(async () => null),
   };
   const health = new Health(repo, telegram);
   return { repo, telegram, binance, health };
@@ -71,6 +72,7 @@ describe("checkStops stop-proximity pre-warning", () => {
       fetchKlinesRaw: vi.fn(async () => []),
       fetchMarkPrice: vi.fn(async () => 0),
       fetchFunding: vi.fn(async () => null),
+      fetchOiChangePct: vi.fn(async () => null),
     };
     const health = new Health(repo, telegram);
     const runnerDeps: RunnerDeps = { repo, binance, telegram, health };
@@ -106,6 +108,7 @@ describe("checkTimeStop", () => {
       fetchKlinesRaw: vi.fn(async () => []),
       fetchMarkPrice: vi.fn(async () => 0),
       fetchFunding: vi.fn(async () => null),
+      fetchOiChangePct: vi.fn(async () => null),
     };
     const health = new Health(repo, telegram);
     const runnerDeps: RunnerDeps = { repo, binance, telegram, health };

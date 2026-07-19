@@ -20,6 +20,7 @@ export function judgeClose(
   candles: Candle[],
   params: Params,
   funding: number | null,
+  oiChangePct: number | null = null,
 ): SignalEvent[] {
   const i = candles.length - 1;
   const events: SignalEvent[] = [];
@@ -45,7 +46,7 @@ export function judgeClose(
 
     const buf = (params.entryBufferAtr ?? 0) * atrV;
     if (close > entryBand.upper + buf && close > emaV) {
-      const checks = evaluateFilters("long", candles, i, funding, params.filters);
+      const checks = evaluateFilters("long", candles, i, funding, params.filters, oiChangePct);
       if (allPassed(checks)) {
         events.push({
           type: "ENTRY_LONG",
@@ -58,7 +59,7 @@ export function judgeClose(
         events.push({ type: "ENTRY_BLOCKED", dir: "long", price: close, filters: checks });
       }
     } else if (close < entryBand.lower - buf && close < emaV) {
-      const checks = evaluateFilters("short", candles, i, funding, params.filters);
+      const checks = evaluateFilters("short", candles, i, funding, params.filters, oiChangePct);
       if (allPassed(checks)) {
         events.push({
           type: "ENTRY_SHORT",

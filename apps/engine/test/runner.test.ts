@@ -40,6 +40,7 @@ function mkDeps(candles: Candle[]) {
     fetchKlinesRaw: vi.fn(async () => [] as ReturnType<typeof candles.map>),
     fetchMarkPrice: vi.fn(async () => 0),
     fetchFunding: vi.fn(async () => 0.0001),
+    fetchOiChangePct: vi.fn(async () => null),
   };
   const health = new Health(repo, telegram);
   const deps: RunnerDeps = { repo, binance, telegram, health };

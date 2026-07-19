@@ -183,6 +183,7 @@ export function runBacktest(
     const cfg = {
       ...params.filters,
       funding: { ...params.filters.funding, on: false },
+      oi: { ...params.filters.oi, on: false }, // no historical OI series
     };
     const checks = evaluateFilters(dir, candles.slice(0, i + 1), i, null, cfg);
     if (!allPassed(checks)) continue;
