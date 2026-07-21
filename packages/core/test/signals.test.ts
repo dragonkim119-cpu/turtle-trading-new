@@ -269,6 +269,36 @@ describe("runBacktest", () => {
     );
     expect(withVol.stats.n).toBeLessThanOrEqual(off.stats.n);
   });
+
+  it("regime filter blocks a counter-trend entry, passes a trend-aligned one", () => {
+    const DAY = 86_400_000;
+    const FOUR_HOURS = 14_400_000;
+    function d(close: number, openTime: number): Candle {
+      return { openTime, open: close, high: close + 1, low: close - 1, close, volume: 100 };
+    }
+    // trendThenReversal()'s own openTime is a toy sequential counter (0,1,2,...),
+    // not real epoch ms -- regime alignment needs real time deltas (ONE_DAY_MS is
+    // a hardcoded 86_400_000 inside runBacktest), so remap onto real 4h-spaced
+    // timestamps. Only openTime changes; OHLC values (and therefore every
+    // indicator/entry/exit decision) are untouched, so the trade itself is
+    // identical to the baseline -- only regime gating differs.
+    const candles = trendThenReversal().map((cd, idx) => ({ ...cd, openTime: idx * FOUR_HOURS }));
+    const withRegime: Params = { ...P, filters: { ...P.filters, regime: { on: true, emaPeriod: 2 } } };
+    // entry bar is index 6 (see the "captures a trend trade" test below) ->
+    // real openTime = 6*4h = 24h = exactly 1*DAY.
+
+    // bearish 1d regime as of the entry bar -> the long entry must be blocked -> no trades
+    const bearishDaily = [d(20, -2 * DAY), d(20, -1 * DAY), d(5, 0)];
+    const blocked = runBacktest(candles, withRegime, 1000, undefined, bearishDaily);
+    expect(blocked.trades).toHaveLength(0);
+
+    // bullish 1d regime as of the entry bar -> the long entry passes -> same trade as without regime
+    const bullishDaily = [d(5, -2 * DAY), d(5, -1 * DAY), d(20, 0)];
+    const allowed = runBacktest(candles, withRegime, 1000, undefined, bullishDaily);
+    const baseline = runBacktest(candles, P, 1000);
+    expect(allowed.trades).toHaveLength(baseline.trades.length);
+    expect(baseline.trades).toHaveLength(1); // sanity: exactly one trade exists to gate
+  });
 });
 
 describe("resolveRegimeDir", () => {

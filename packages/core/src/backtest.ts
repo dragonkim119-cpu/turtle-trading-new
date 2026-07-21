@@ -54,6 +54,7 @@ export function runBacktest(
   params: Params,
   startEquity = 10_000_000,
   costs: BacktestCosts = NO_COSTS,
+  higherTfCandles: Candle[] = [],
 ): BacktestResult {
   const slip = costs.slippagePct / 100;
   const taker = costs.takerPct / 100;
@@ -64,6 +65,11 @@ export function runBacktest(
     params.emaPeriod,
   );
   const atrArr = atr(candles, params.atrPeriod);
+  const higherEmaArr = params.filters.regime.on
+    ? ema(higherTfCandles.map((c) => c.close), params.filters.regime.emaPeriod)
+    : [];
+  let regimePtr = -1; // index into higherTfCandles: last CLOSED bar as of the current 4h bar
+  const ONE_DAY_MS = 86_400_000;
 
   const trades: Trade[] = [];
   let equity = startEquity;
@@ -174,6 +180,21 @@ export function runBacktest(
     const atrV = atrArr[i];
     if (eb === null || emaV === null || atrV === null) continue;
 
+    if (params.filters.regime.on) {
+      while (
+        regimePtr + 1 < higherTfCandles.length &&
+        higherTfCandles[regimePtr + 1].openTime + ONE_DAY_MS <= c.openTime
+      ) {
+        regimePtr++;
+      }
+    }
+    const regimeDir: Side | null =
+      params.filters.regime.on && regimePtr >= 0 && higherEmaArr[regimePtr] !== null
+        ? higherTfCandles[regimePtr].close >= (higherEmaArr[regimePtr] as number)
+          ? "long"
+          : "short"
+        : null;
+
     let dir: Side | null = null;
     const buf = (params.entryBufferAtr ?? 0) * atrV;
     if (c.close > eb.upper + buf && c.close > emaV) dir = "long";
@@ -185,7 +206,7 @@ export function runBacktest(
       funding: { ...params.filters.funding, on: false },
       oi: { ...params.filters.oi, on: false }, // no historical OI series
     };
-    const checks = evaluateFilters(dir, candles.slice(0, i + 1), i, null, cfg);
+    const checks = evaluateFilters(dir, candles.slice(0, i + 1), i, null, cfg, null, regimeDir);
     if (!allPassed(checks)) continue;
 
     side = dir;
