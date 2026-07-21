@@ -45,7 +45,7 @@ function c(high: number, low: number, close: number, volume = 100, openTime = 0)
 
 const P: Params = {
   entryPeriod: 3,
-  exitPeriod: 100,
+  exitPeriod: 2,
   atrPeriod: 2,
   stopMult: 2,
   emaPeriod: 3,
@@ -61,6 +61,14 @@ const P: Params = {
     oi: { on: false, minChangePct: 0 },
   },
 };
+
+// exitPeriod:100 disables the channel exit entirely (needs >=100 bars of
+// history) -- used only for the short explicit-stop-hit fixture below, where
+// the channel must NOT fire so the stop is the only way the trade closes.
+// trendCandles-based tests need the real exitPeriod:2 channel exit (P above)
+// to ever close the position the reversal opens, or the trade never appears
+// in `trades` at all.
+const P_NO_CHANNEL: Params = { ...P, exitPeriod: 100 };
 
 function trendCandles(startOpenTime: number): Candle[] {
   const candles: Candle[] = [];
@@ -103,9 +111,9 @@ describe("runPortfolioBacktest — single symbol reduces to runBacktest", () => 
       c(12, 9, 12, 100, 3), // breakout entry @12, ATR=2, stop=8
       c(8, 5, 6, 100, 4), // low 5 <= stop 8 -> stop hit; close 6 would also break short
     ];
-    const solo = runBacktest(candles, P, 1000);
+    const solo = runBacktest(candles, P_NO_CHANNEL, 1000);
     const portfolio = runPortfolioBacktest(
-      [{ symbol: "X", candles, params: P }],
+      [{ symbol: "X", candles, params: P_NO_CHANNEL }],
       undefined,
       1000,
       undefined,
@@ -526,8 +534,8 @@ describe("runPortfolioBacktest — portfolio gate: open risk cap", () => {
       c(12, 9, 12, 100, 6), // breakout while A is open
     ];
     const inputs: SymbolInput[] = [
-      { symbol: "A", candles: candlesA, params: P },
-      { symbol: "B", candles: candlesB, params: P },
+      { symbol: "A", candles: candlesA, params: P_NO_CHANNEL },
+      { symbol: "B", candles: candlesB, params: P_NO_CHANNEL },
     ];
     const gateCfg = { ...DEFAULT_PORTFOLIO_GATE, maxOpenRiskPct: 1 };
 
@@ -564,8 +572,8 @@ describe("runPortfolioBacktest — portfolio gate: daily loss throttle", () => {
       c(12, 9, 12, 100, BASE + 4 * H), // same bar A's loss closes on
     ];
     const inputs: SymbolInput[] = [
-      { symbol: "A", candles: lossFixture(), params: P },
-      { symbol: "B", candles: candlesB, params: P },
+      { symbol: "A", candles: lossFixture(), params: P_NO_CHANNEL },
+      { symbol: "B", candles: candlesB, params: P_NO_CHANNEL },
     ];
     const gateCfg = { ...DEFAULT_PORTFOLIO_GATE, maxOpenRiskPct: 100, dailyLossPct: 1, monthlyLossPct: 100 };
 
@@ -582,8 +590,8 @@ describe("runPortfolioBacktest — portfolio gate: daily loss throttle", () => {
       c(12, 9, 12, 100, BASE + 30 * H), // next day (30h > 24h)
     ];
     const inputs: SymbolInput[] = [
-      { symbol: "A", candles: lossFixture(), params: P },
-      { symbol: "B", candles: candlesB, params: P },
+      { symbol: "A", candles: lossFixture(), params: P_NO_CHANNEL },
+      { symbol: "B", candles: candlesB, params: P_NO_CHANNEL },
     ];
     const gateCfg = { ...DEFAULT_PORTFOLIO_GATE, maxOpenRiskPct: 100, dailyLossPct: 1, monthlyLossPct: 100 };
 
@@ -615,8 +623,8 @@ describe("runPortfolioBacktest — portfolio gate: monthly loss throttle", () =>
       c(12, 9, 12, 100, BASE + 8 * H), // still Jan 15
     ];
     const inputs: SymbolInput[] = [
-      { symbol: "A", candles: lossFixture(), params: P },
-      { symbol: "B", candles: candlesB, params: P },
+      { symbol: "A", candles: lossFixture(), params: P_NO_CHANNEL },
+      { symbol: "B", candles: candlesB, params: P_NO_CHANNEL },
     ];
     const gateCfg = { ...DEFAULT_PORTFOLIO_GATE, maxOpenRiskPct: 100, dailyLossPct: 100, monthlyLossPct: 1 };
 
@@ -634,8 +642,8 @@ describe("runPortfolioBacktest — portfolio gate: monthly loss throttle", () =>
       c(12, 9, 12, 100, febBase + 3 * H), // February
     ];
     const inputs: SymbolInput[] = [
-      { symbol: "A", candles: lossFixture(), params: P },
-      { symbol: "B", candles: candlesB, params: P },
+      { symbol: "A", candles: lossFixture(), params: P_NO_CHANNEL },
+      { symbol: "B", candles: candlesB, params: P_NO_CHANNEL },
     ];
     const gateCfg = { ...DEFAULT_PORTFOLIO_GATE, maxOpenRiskPct: 100, dailyLossPct: 100, monthlyLossPct: 1 };
 
