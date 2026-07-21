@@ -6,4 +6,5 @@ export * from "./signals.js";
 export * from "./backtest.js";
 export * from "./features.js";
 export * from "./portfolio.js";
+export * from "./portfolio-backtest.js";
 export * from "./volatility.js";
