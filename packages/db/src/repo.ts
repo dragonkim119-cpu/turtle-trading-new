@@ -97,6 +97,7 @@ export class Repo {
         vwap: { ...defaults.filters.vwap, ...sf.vwap },
         funding: { ...defaults.filters.funding, ...sf.funding },
         oi: { ...defaults.filters.oi, ...sf.oi },
+        regime: { ...defaults.filters.regime, ...sf.regime },
       },
     };
   }

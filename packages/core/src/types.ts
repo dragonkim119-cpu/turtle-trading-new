@@ -18,6 +18,10 @@ export interface FilterConfig {
   // OI confirmation: breakout should coincide with rising open interest (new money).
   // Like funding, no long historical series via free API -> live-only, default off.
   oi: { on: boolean; minChangePct: number }; // e.g. 0 => require OI change > 0%
+  // Higher-timeframe (1d) trend regime: entry direction must match the last
+  // CLOSED 1d bar's close-vs-EMA(emaPeriod) direction. Backtestable (unlike
+  // funding/oi) since daily klines have long free history.
+  regime: { on: boolean; emaPeriod: number };
 }
 
 export interface PartialTp {
@@ -69,11 +73,12 @@ export const DEFAULT_PARAMS: Params = {
     vwap: { on: true, bars: 30 },
     funding: { on: true, maxAbs: 0.001 },
     oi: { on: false, minChangePct: 0 }, // off by default; not long-backtestable
+    regime: { on: false, emaPeriod: 200 }, // off by default; adopt only if backtest gate passes
   },
 };
 
 export interface FilterCheck {
-  name: "adx" | "volume" | "vwap" | "funding" | "oi";
+  name: "adx" | "volume" | "vwap" | "funding" | "oi" | "regime";
   passed: boolean;
   value: number | null;
   detail: string;

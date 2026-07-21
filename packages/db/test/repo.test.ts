@@ -40,6 +40,17 @@ describe("Repo", () => {
     expect(loaded.filters.adx).toEqual(DEFAULT_PARAMS.filters.adx);
   });
 
+  it("params saved before regime filter was added still merge in the new default", () => {
+    const r = repo();
+    const old = structuredClone(DEFAULT_PARAMS) as Partial<typeof DEFAULT_PARAMS>;
+    const oldFilters = old.filters as Partial<(typeof DEFAULT_PARAMS)["filters"]>;
+    delete oldFilters.regime;
+    r.upsertParams("SOLUSDT", "4h", old as typeof DEFAULT_PARAMS);
+    const loaded = r.getParams("SOLUSDT", "4h");
+    expect(loaded.filters.regime).toEqual(DEFAULT_PARAMS.filters.regime);
+    expect(loaded.filters.adx).toEqual(DEFAULT_PARAMS.filters.adx);
+  });
+
   it("signal unique key dedupe", () => {
     const r = repo();
     const id1 = r.insertSignal("BTCUSDT", "4h", "ENTRY_LONG", 1000, { price: 1 });

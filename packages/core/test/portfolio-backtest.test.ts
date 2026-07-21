@@ -24,6 +24,7 @@ const P: Params = {
     vwap: { on: false, bars: 30 },
     funding: { on: false, maxAbs: 0.001 },
     oi: { on: false, minChangePct: 0 },
+    regime: { on: false, emaPeriod: 200 },
   },
 };
 
