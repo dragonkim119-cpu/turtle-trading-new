@@ -126,7 +126,7 @@ describe("runPortfolioBacktest — portfolio gate: open risk cap", () => {
       c(9.5, 8.5, 9, 100, 1),
       c(9.5, 8.5, 9, 100, 2),
       c(12, 9, 12, 100, 3), // breakout entry @12 (same time as A's entry, but processed after)
-      c(8, 5, 6, 100, 4), // stop hit
+      c(10, 5, 9, 100, 4), // stop hits B's ungated position; not a fresh breakout signal (close 9 is inside B's own 8.5-12 band) so B never re-attempts entry in the gated case
     ];
     const inputs: SymbolInput[] = [
       { symbol: "A", candles: candlesA, params: P_NO_CHANNEL },
