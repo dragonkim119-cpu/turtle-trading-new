@@ -9,7 +9,7 @@ function c(high: number, low: number, close: number, volume = 100, openTime = 0)
 
 const P: Params = {
   entryPeriod: 3,
-  exitPeriod: 100,
+  exitPeriod: 2,
   atrPeriod: 2,
   stopMult: 2,
   emaPeriod: 3,
@@ -25,6 +25,14 @@ const P: Params = {
     oi: { on: false, minChangePct: 0 },
   },
 };
+
+// exitPeriod:100 disables the channel exit entirely (needs >=100 bars of
+// history) -- used only for the short explicit-stop-hit fixture below, where
+// the channel must NOT fire so the stop is the only way the trade closes.
+// trendCandles-based tests need the real exitPeriod:2 channel exit (P above)
+// to ever close the position the reversal opens, or the trade never appears
+// in `trades` at all.
+const P_NO_CHANNEL: Params = { ...P, exitPeriod: 100 };
 
 function trendCandles(startOpenTime: number): Candle[] {
   const candles: Candle[] = [];
@@ -67,9 +75,9 @@ describe("runPortfolioBacktest — single symbol reduces to runBacktest", () => 
       c(12, 9, 12, 100, 3), // breakout entry @12, ATR=2, stop=8
       c(8, 5, 6, 100, 4), // low 5 <= stop 8 -> stop hit; close 6 would also break short
     ];
-    const solo = runBacktest(candles, P, 1000);
+    const solo = runBacktest(candles, P_NO_CHANNEL, 1000);
     const portfolio = runPortfolioBacktest(
-      [{ symbol: "X", candles, params: P }],
+      [{ symbol: "X", candles, params: P_NO_CHANNEL }],
       undefined,
       1000,
       undefined,
