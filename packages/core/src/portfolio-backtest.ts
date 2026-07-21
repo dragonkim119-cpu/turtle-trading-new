@@ -180,7 +180,7 @@ export function runPortfolioBacktest(
   for (const t of allTimes) {
     for (const st of states) {
       const i = st.timeIndex.get(t);
-      if (i === undefined || st.side === null) continue;
+      if (i === undefined || i === 0 || st.side === null) continue;
       const cd = st.candles[i];
 
       if (st.side === "long" && cd.low <= st.stop) {
@@ -238,7 +238,7 @@ export function runPortfolioBacktest(
 
     for (const st of states) {
       const i = st.timeIndex.get(t);
-      if (i === undefined || st.side !== null || st.lastCloseTime === t) continue;
+      if (i === undefined || i === 0 || st.side !== null || st.lastCloseTime === t) continue;
       const cd = st.candles[i];
       const eb = st.entryBands[i];
       const emaV = st.emaArr[i];
@@ -282,6 +282,9 @@ export function runPortfolioBacktest(
           demotedCount++;
           continue;
         }
+        // currently unreachable: evaluatePortfolioGate's monthly-throttle branch always
+        // sets demote=true alongside halveRisk=true, and demote (checked above) already
+        // skipped the entry via continue -- kept for live-engine parity / future-proofing
         if (gate.halveRisk) {
           halvedCount++;
           riskPct = riskPct / 2;
