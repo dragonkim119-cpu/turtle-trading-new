@@ -6,7 +6,8 @@
     "build": "pnpm -r build",
     "backtest": "tsx scripts/backtest.ts",
     "backtest:sweep": "tsx scripts/sweep.ts",
-    "backtest:crossval": "tsx scripts/crossval.ts"
+    "backtest:crossval": "tsx scripts/crossval.ts",
+    "backtest:portfolio": "tsx scripts/backtest-portfolio.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.0",

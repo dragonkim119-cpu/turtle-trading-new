@@ -27,6 +27,7 @@ pnpm --filter @turtle/web dev          # 웹 (기본 포트 3000)
 pnpm backtest BTCUSDT 1d 2022-01-01    # 필터 조합 비교표 (구조 파라미터는 클래식 고정)
 pnpm backtest:sweep BTCUSDT 4h 2023-01-01  # 진입/청산/손절/버퍼/부분익절 그리드 스윕
 pnpm backtest:crossval                 # 후보 파라미터 vs baseline 다심볼·다기간 교차검증
+pnpm backtest:portfolio 4h 2023-01-01               # 4심볼(BTC/ETH/SOL/BNB) 공유equity 포트폴리오 백테스트, 게이트 off/on 비교
 
 # --use-saved-params: 웹 차트 ⚙ 파라미터 시트에서 저장한 심볼별 DB 파라미터로 백테스트
 pnpm backtest BTCUSDT 4h 2024-01-01 --use-saved-params       # 단일 결과 (클래식 비교표 대신)
@@ -91,7 +92,7 @@ Railway: Dockerfile 자동 빌드. Volume `/data` 마운트 + 환경변수 4개.
 냉정 평가: 표본 얇음(단일심볼 4h 2021-23 57~88건 — 노이즈 구간), 포트폴리오 분산 없음(원조 터틀 우위 원천인데 미구현), 레짐 구분 없음(횡보장 손절반복 약점 그대로), funding/OI 필터는 백테스트 미검증 상태로 실사용.
 
 PF 기여도 우선순위:
-1. **포트폴리오 분산 백테스트** — `core/portfolio.ts` 리스크 게이트는 있으나 다심볼 합산 자산곡선 백테스트 자체가 없음. 개별 심볼 PF보다 포트폴리오 전체 PF·MDD 검증이 실질 개선 가능성 제일 큼
+1. ~~**포트폴리오 분산 백테스트**~~ (완료 2026-07-21, `scripts/backtest-portfolio.ts`) — `core/portfolio.ts` 리스크 게이트는 있으나 다심볼 합산 자산곡선 백테스트 자체가 없음. 개별 심볼 PF보다 포트폴리오 전체 PF·MDD 검증이 실질 개선 가능성 제일 큼
 2. **레짐 필터** — 상위 타임프레임(1d) 추세방향과 4h 신호 일치 요구하는 멀티타임프레임 필터. 횡보장 손절 반복 완화
 3. **청산 로직 개선** — 스윕에서 청산봉수(15 vs 20)가 진입/손절보다 PF 영향 큼. ATR 기반 트레일링(chandelier식)으로 교체 검토
 4. **부분익절 단계 확장** — 1R/50% 단일단계 → 1R/2R/3R 다단계 익절로 승리거래 분산·PF 안정화
