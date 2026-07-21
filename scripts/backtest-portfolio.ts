@@ -20,6 +20,10 @@ import {
 import { openDb, Repo } from "../packages/db/src/index.js";
 
 const BASE = "https://fapi.binance.com";
+// order matters: within one bar, symbols are entry-checked in this order, so
+// an earlier symbol gets first claim on the open-risk-cap budget when both
+// signal on the same bar (see runPortfolioBacktest's deterministic same-tick
+// processing order).
 const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"];
 
 async function fetchKlines(
@@ -91,7 +95,13 @@ async function main() {
   const inputs: SymbolInput[] = [];
   for (const symbol of SYMBOLS) {
     console.log(`${symbol} 캔들 로딩...`);
-    const candles = await fetchKlines(symbol, interval, start, end);
+    let candles: Candle[];
+    try {
+      candles = await fetchKlines(symbol, interval, start, end);
+    } catch (e) {
+      console.log(`${symbol}: fetch 실패 — ${(e as Error).message}, 건너뜀`);
+      continue;
+    }
     if (candles.length < DEFAULT_PARAMS.emaPeriod + 50) {
       console.warn(`⚠ ${symbol} 캔들 ${candles.length}개 — 부족, 건너뜀`);
       continue;
