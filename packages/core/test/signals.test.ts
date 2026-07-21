@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { judgeClose } from "../src/signals.js";
+import { judgeClose, resolveRegimeDir } from "../src/signals.js";
 import { runBacktest } from "../src/backtest.js";
 import type { Candle, Params } from "../src/types.js";
 
@@ -268,5 +268,87 @@ describe("runBacktest", () => {
       1000,
     );
     expect(withVol.stats.n).toBeLessThanOrEqual(off.stats.n);
+  });
+});
+
+describe("resolveRegimeDir", () => {
+  const DAY = 86_400_000;
+  function d(close: number, openTime: number): Candle {
+    return { openTime, open: close, high: close + 1, low: close - 1, close, volume: 100 };
+  }
+
+  it("uses only the last CLOSED daily bar, never a bar in progress", () => {
+    // 3 flat daily bars (close 10) then a rising 4th bar (close 20) still in progress
+    // at the 4h timestamp under test (4h bar opens exactly when day 4 starts).
+    const daily = [d(10, 0 * DAY), d(10, 1 * DAY), d(10, 2 * DAY), d(20, 3 * DAY)];
+    // at t = 3*DAY (day 4's bar just opened, not closed yet): last closed is day 3 (idx2)
+    const dir = resolveRegimeDir(daily, 3 * DAY, 2);
+    // EMA(2) over closes [10,10,10] as of idx2 warms up at idx1 -> value 10; close(idx2)=10 -> tie -> "long" (>=)
+    expect(dir).toBe("long");
+  });
+
+  it("advances to the newly closed bar once its full day has elapsed", () => {
+    const daily = [d(10, 0 * DAY), d(10, 1 * DAY), d(10, 2 * DAY), d(20, 3 * DAY)];
+    // at t = 4*DAY: day 4's bar (close 20, opened 3*DAY) is now fully closed
+    const dir = resolveRegimeDir(daily, 4 * DAY, 2);
+    // EMA(2) over closes [10,10,10,20] as of idx3: seed(idx1)=10, idx2: 10*k+10*(1-k)=10,
+    // idx3: 20*k+10*(1-k) with k=2/3 -> 20*0.667+10*0.333≈16.67; close(idx3)=20 > ema -> "long"
+    expect(dir).toBe("long");
+  });
+
+  it("returns null when EMA hasn't warmed up yet", () => {
+    const daily = [d(10, 0 * DAY)];
+    expect(resolveRegimeDir(daily, 1 * DAY, 200)).toBeNull();
+  });
+
+  it("returns null when no higher-tf candles are supplied", () => {
+    expect(resolveRegimeDir(undefined, 5 * DAY, 2)).toBeNull();
+    expect(resolveRegimeDir([], 5 * DAY, 2)).toBeNull();
+  });
+
+  it("returns short when the last closed bar's close is below its EMA", () => {
+    const daily = [d(20, 0 * DAY), d(20, 1 * DAY), d(20, 2 * DAY), d(5, 3 * DAY)];
+    const dir = resolveRegimeDir(daily, 4 * DAY, 2);
+    expect(dir).toBe("short");
+  });
+});
+
+describe("judgeClose with regime filter", () => {
+  const DAY = 86_400_000;
+  function d(close: number, openTime: number): Candle {
+    return { openTime, open: close, high: close + 1, low: close - 1, close, volume: 100 };
+  }
+  const withRegime: Params = {
+    ...P,
+    filters: { ...P.filters, regime: { on: true, emaPeriod: 2 } },
+  };
+
+  it("blocks an entry against the 1d regime", () => {
+    // 1d regime clearly bearish (declining closes, well below EMA at the last closed bar)
+    const daily = [d(20, 0 * DAY), d(20, 1 * DAY), d(20, 2 * DAY), d(5, 3 * DAY), d(5, 4 * DAY)];
+    // 4h candles: breakout LONG signal (from the existing breakout fixture), at t = 5*DAY
+    const candles = [
+      c(11, 9, 10, 100, 5 * DAY),
+      c(12, 10, 11, 100, 5 * DAY + 1),
+      c(13, 11, 12, 100, 5 * DAY + 2),
+      c(20, 12, 20, 100, 5 * DAY + 3), // breakout bar, long signal
+    ];
+    const ev = judgeClose(FLAT, candles, withRegime, null, null, daily);
+    expect(ev).toHaveLength(1);
+    expect(ev[0].type).toBe("ENTRY_BLOCKED");
+  });
+
+  it("allows an entry aligned with the 1d regime", () => {
+    // 1d regime clearly bullish
+    const daily = [d(5, 0 * DAY), d(5, 1 * DAY), d(5, 2 * DAY), d(20, 3 * DAY), d(20, 4 * DAY)];
+    const candles = [
+      c(11, 9, 10, 100, 5 * DAY),
+      c(12, 10, 11, 100, 5 * DAY + 1),
+      c(13, 11, 12, 100, 5 * DAY + 2),
+      c(20, 12, 20, 100, 5 * DAY + 3),
+    ];
+    const ev = judgeClose(FLAT, candles, withRegime, null, null, daily);
+    expect(ev).toHaveLength(1);
+    expect(ev[0].type).toBe("ENTRY_LONG");
   });
 });
