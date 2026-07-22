@@ -3,6 +3,7 @@ import {
   evaluatePortfolioGate,
   featureSnapshot,
   judgeClose,
+  type Candle,
   type GateResult,
   type PortfolioGateConfig,
   type PosCtx,
@@ -57,6 +58,7 @@ function evaluateEntryGate(repo: Repo, symbol: string, dir: Side, riskPct: numbe
 }
 
 const CANDLE_FETCH = 320; // covers EMA200 + VWAP(30d on 4h = 180 bars) with margin
+const REGIME_FETCH = 220; // covers EMA200 + margin on daily bars
 
 export interface RunnerDeps {
   repo: Repo;
@@ -102,12 +104,18 @@ export async function processSymbol(
   let candles;
   let funding: number | null;
   let oiChangePct: number | null = null;
+  let higherTfCandles: Candle[] | undefined;
   try {
     candles = await binance.fetchKlines(symbol, tf, CANDLE_FETCH);
     funding = await binance.fetchFunding(symbol);
+    const params0 = repo.getParams(symbol, tf);
     // OI only fetched when the filter is enabled for this symbol/timeframe.
-    if (repo.getParams(symbol, tf).filters.oi.on) {
+    if (params0.filters.oi.on) {
       oiChangePct = await binance.fetchOiChangePct(symbol);
+    }
+    // Regime only meaningful on 4h (1d has no higher timeframe here).
+    if (tf === "4h" && params0.filters.regime.on) {
+      higherTfCandles = await binance.fetchKlines(symbol, "1d", REGIME_FETCH);
     }
     health.apiOk();
   } catch (e) {
@@ -137,7 +145,7 @@ export async function processSymbol(
       ? { side: open.side, entryPrice: open.entryPrice, stop: open.stop }
       : { side: null };
 
-    const events = judgeClose(pos, window, params, funding, oiChangePct);
+    const events = judgeClose(pos, window, params, funding, oiChangePct, higherTfCandles);
     for (const ev of events) {
       // Capture a feature snapshot + evaluate the portfolio gate for entries.
       let snapshot: unknown = null;
