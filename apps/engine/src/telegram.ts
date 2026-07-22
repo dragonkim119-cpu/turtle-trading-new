@@ -1,24 +1,49 @@
+import https from "node:https";
 import type { FilterCheck, SignalEvent, Timeframe } from "@turtle/core";
 
 export interface TelegramSender {
   send(text: string): Promise<boolean>;
 }
 
+/**
+ * Posts to the Telegram Bot API over plain node:https (NOT the global fetch).
+ * Node's built-in fetch (undici) attempts a dual-stack IPv6/IPv4 connection
+ * and hangs to ETIMEDOUT/ENETUNREACH on networks where IPv6 routing to
+ * api.telegram.org is broken but IPv4 works fine -- forcing `family: 4`
+ * here sidesteps that; https.request respects it directly (fetch's dispatcher
+ * doesn't, even with dns.setDefaultResultOrder("ipv4first")).
+ */
+function post(token: string, body: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = https.request(
+      {
+        hostname: "api.telegram.org",
+        path: `/bot${token}/sendMessage`,
+        method: "POST",
+        family: 4,
+        timeout: 10_000,
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        res.resume(); // drain, body not needed
+        resolve((res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300);
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", () => resolve(false));
+    req.end(body);
+  });
+}
+
 export function createTelegram(token: string, chatId: string): TelegramSender {
   return {
     async send(text: string): Promise<boolean> {
+      const body = JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true });
       for (let i = 0; i < 3; i++) {
-        try {
-          const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
-            signal: AbortSignal.timeout(10_000),
-          });
-          if (res.ok) return true;
-        } catch {
-          // retry
-        }
+        if (await post(token, body)) return true;
         await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
       }
       return false;
