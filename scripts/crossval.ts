@@ -96,6 +96,7 @@ function loadSavedParams(symbol: string, timeframe: Timeframe): Params {
   // no historical series for these — same constraint as baseline/candidate
   p.filters.funding.on = false;
   p.filters.oi.on = false;
+  p.filters.regime.on = false; // no daily candles threaded through crossval yet — would silently no-op otherwise
   return p;
 }
 
