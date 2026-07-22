@@ -75,6 +75,7 @@ function loadSavedParams(symbol: string, timeframe: Timeframe): Params {
   // no historical series for these — same constraint as the structural sweep
   p.filters.funding.on = false;
   p.filters.oi.on = false;
+  p.filters.regime.on = false; // no daily candles threaded through sweep yet — would silently no-op otherwise
   return p;
 }
 

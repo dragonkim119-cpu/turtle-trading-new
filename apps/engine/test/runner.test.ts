@@ -73,6 +73,39 @@ describe("processSymbol", () => {
     expect(telegram.send).toHaveBeenCalledTimes(1);
   });
 
+  it("fetches 1d candles for the regime filter only when enabled on a 4h symbol", async () => {
+    const now = Math.floor(Date.now() / H4) * H4 + 60_000;
+    const lastClosed = lastClosedOpenTime("4h", now);
+    const candles = mkCandles(300, lastClosed, true);
+    const { repo, binance, deps } = mkDeps(candles);
+
+    const p = repo.getParams("BTCUSDT", "4h");
+    p.filters.adx.on = false;
+    p.filters.regime.on = true;
+    repo.upsertParams("BTCUSDT", "4h", p);
+
+    await processSymbol(deps, "BTCUSDT", "4h", now);
+
+    const tfArgs = binance.fetchKlines.mock.calls.map((call: unknown[]) => call[1]);
+    expect(tfArgs).toContain("1d");
+  });
+
+  it("does not fetch 1d candles when the regime filter is off", async () => {
+    const now = Math.floor(Date.now() / H4) * H4 + 60_000;
+    const lastClosed = lastClosedOpenTime("4h", now);
+    const candles = mkCandles(300, lastClosed, true);
+    const { repo, binance, deps } = mkDeps(candles);
+
+    const p = repo.getParams("BTCUSDT", "4h");
+    p.filters.adx.on = false;
+    repo.upsertParams("BTCUSDT", "4h", p); // regime stays off (default)
+
+    await processSymbol(deps, "BTCUSDT", "4h", now);
+
+    const tfArgs = binance.fetchKlines.mock.calls.map((call: unknown[]) => call[1]);
+    expect(tfArgs).not.toContain("1d");
+  });
+
   it("demotes entry when portfolio open-risk cap is hit", async () => {
     const now = Math.floor(Date.now() / H4) * H4 + 60_000;
     const lastClosed = lastClosedOpenTime("4h", now);

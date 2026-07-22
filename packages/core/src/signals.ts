@@ -1,6 +1,34 @@
 import { atr, donchian, ema } from "./indicators.js";
 import { allPassed, evaluateFilters } from "./filters.js";
-import type { Candle, Params, PosCtx, SignalEvent } from "./types.js";
+import type { Candle, Params, PosCtx, Side, SignalEvent } from "./types.js";
+
+const ONE_DAY_MS = 86_400_000;
+
+/**
+ * Resolve the 1d regime direction as of a 4h (or any lower-tf) candle's
+ * openTime: the last CLOSED daily bar's close vs its EMA(emaPeriod). Never
+ * references a daily bar still in progress (look-ahead guard) — a bar counts
+ * as closed only once a full day has elapsed since its own openTime.
+ */
+export function resolveRegimeDir(
+  higherTfCandles: Candle[] | undefined,
+  atOpenTime: number,
+  emaPeriod: number,
+): Side | null {
+  if (!higherTfCandles || higherTfCandles.length === 0) return null;
+  let lastClosedIdx = -1;
+  for (let j = 0; j < higherTfCandles.length; j++) {
+    if (higherTfCandles[j].openTime + ONE_DAY_MS <= atOpenTime) lastClosedIdx = j;
+    else break; // candles are sorted ascending by openTime
+  }
+  if (lastClosedIdx < 0) return null;
+  const closes = higherTfCandles.slice(0, lastClosedIdx + 1).map((c) => c.close);
+  const emaArr = ema(closes, emaPeriod);
+  const emaV = emaArr[emaArr.length - 1];
+  if (emaV === null) return null;
+  const close = higherTfCandles[lastClosedIdx].close;
+  return close >= emaV ? "long" : "short";
+}
 
 /**
  * Judge the just-closed candle (last element of `candles`).
@@ -21,6 +49,7 @@ export function judgeClose(
   params: Params,
   funding: number | null,
   oiChangePct: number | null = null,
+  higherTfCandles?: Candle[],
 ): SignalEvent[] {
   const i = candles.length - 1;
   const events: SignalEvent[] = [];
@@ -46,7 +75,8 @@ export function judgeClose(
 
     const buf = (params.entryBufferAtr ?? 0) * atrV;
     if (close > entryBand.upper + buf && close > emaV) {
-      const checks = evaluateFilters("long", candles, i, funding, params.filters, oiChangePct);
+      const regimeDir = resolveRegimeDir(higherTfCandles, candles[i].openTime, params.filters.regime.emaPeriod);
+      const checks = evaluateFilters("long", candles, i, funding, params.filters, oiChangePct, regimeDir);
       if (allPassed(checks)) {
         events.push({
           type: "ENTRY_LONG",
@@ -59,7 +89,8 @@ export function judgeClose(
         events.push({ type: "ENTRY_BLOCKED", dir: "long", price: close, filters: checks });
       }
     } else if (close < entryBand.lower - buf && close < emaV) {
-      const checks = evaluateFilters("short", candles, i, funding, params.filters, oiChangePct);
+      const regimeDir = resolveRegimeDir(higherTfCandles, candles[i].openTime, params.filters.regime.emaPeriod);
+      const checks = evaluateFilters("short", candles, i, funding, params.filters, oiChangePct, regimeDir);
       if (allPassed(checks)) {
         events.push({
           type: "ENTRY_SHORT",

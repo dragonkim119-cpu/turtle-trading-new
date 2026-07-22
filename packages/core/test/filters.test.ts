@@ -13,13 +13,14 @@ const OFF: FilterConfig = {
   vwap: { on: false, bars: 30 },
   funding: { on: false, maxAbs: 0.001 },
   oi: { on: false, minChangePct: 0 },
+  regime: { on: false, emaPeriod: 200 },
 };
 
 describe("evaluateFilters", () => {
   it("all off -> all pass", () => {
     const candles = [c(1, 0, 1), c(1, 0, 1)];
     const checks = evaluateFilters("long", candles, 1, null, OFF);
-    expect(checks).toHaveLength(5);
+    expect(checks).toHaveLength(6);
     expect(allPassed(checks)).toBe(true);
   });
 
@@ -66,6 +67,31 @@ describe("evaluateFilters", () => {
     const checks = evaluateFilters("long", candles, 1, null, cfg, null);
     expect(allPassed(checks)).toBe(true);
     expect(checks.find((f) => f.name === "oi")!.detail).toContain("조회 불가");
+  });
+});
+
+describe("regime filter", () => {
+  const cfg: FilterConfig = { ...OFF, regime: { on: true, emaPeriod: 200 } };
+  const candles = [c(1, 0, 1), c(1, 0, 1)];
+
+  it("passes when regimeDir matches entry direction", () => {
+    expect(allPassed(evaluateFilters("long", candles, 1, null, cfg, null, "long"))).toBe(true);
+    expect(allPassed(evaluateFilters("short", candles, 1, null, cfg, null, "short"))).toBe(true);
+  });
+
+  it("blocks when regimeDir opposes entry direction", () => {
+    expect(allPassed(evaluateFilters("long", candles, 1, null, cfg, null, "short"))).toBe(false);
+    expect(allPassed(evaluateFilters("short", candles, 1, null, cfg, null, "long"))).toBe(false);
+  });
+
+  it("null regimeDir (no higher-tf data) passes with a note", () => {
+    const checks = evaluateFilters("long", candles, 1, null, cfg, null, null);
+    expect(allPassed(checks)).toBe(true);
+    expect(checks.find((f) => f.name === "regime")!.detail).toContain("데이터 부족");
+  });
+
+  it("off -> passes regardless of regimeDir", () => {
+    expect(allPassed(evaluateFilters("long", candles, 1, null, OFF, null, "short"))).toBe(true);
   });
 });
 

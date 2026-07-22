@@ -14,6 +14,7 @@ export function evaluateFilters(
   funding: number | null,
   cfg: FilterConfig,
   oiChangePct: number | null = null,
+  regimeDir: Side | null = null,
 ): FilterCheck[] {
   const checks: FilterCheck[] = [];
 
@@ -109,6 +110,24 @@ export function evaluateFilters(
     }
   } else {
     checks.push({ name: "oi", passed: true, value: null, detail: "off" });
+  }
+
+  // Higher-timeframe (1d) regime confirmation: entry direction must match the
+  // last closed daily bar's trend (close vs EMA). regimeDir is precomputed by
+  // the caller (judgeClose/runBacktest), which owns the alignment logic.
+  if (cfg.regime.on) {
+    if (regimeDir === null) {
+      checks.push({ name: "regime", passed: true, value: null, detail: "1d 데이터 부족 - 통과 처리" });
+    } else {
+      checks.push({
+        name: "regime",
+        passed: regimeDir === dir,
+        value: null,
+        detail: `1d 레짐 ${regimeDir === "long" ? "상승" : "하락"} vs 진입 ${dir === "long" ? "롱" : "숏"}`,
+      });
+    }
+  } else {
+    checks.push({ name: "regime", passed: true, value: null, detail: "off" });
   }
 
   return checks;
