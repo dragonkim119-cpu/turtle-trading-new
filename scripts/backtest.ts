@@ -64,6 +64,12 @@ function withFilters(overrides: Partial<Record<keyof Params["filters"], boolean>
   return p;
 }
 
+function withRegime(): Params {
+  const p = withFilters({});
+  p.filters.regime = { on: true, emaPeriod: 200 };
+  return p;
+}
+
 function loadSavedParams(symbol: string, timeframe: Timeframe): Params {
   const dbPath = process.env.DB_PATH ?? path.join(process.cwd(), "data", "turtle.db");
   const repo = new Repo(openDb(dbPath));
@@ -121,11 +127,19 @@ async function main() {
     ["ADX만", withFilters({ adx: true })],
     ["거래량만", withFilters({ volume: true })],
     ["VWAP만", withFilters({ vwap: true })],
+    ...(interval !== "1d" ? ([["레짐만(1d)", withRegime()]] as [string, Params][]) : []),
     ["전부 ON", withFilters({ adx: true, volume: true, vwap: true })],
   ];
 
+  let dailyCandles: Candle[] = [];
+  if (interval !== "1d" && combos.some(([label]) => label.includes("레짐"))) {
+    console.log(`레짐 필터용 1d 캔들 로딩...`);
+    dailyCandles = await fetchKlines(symbol, "1d", start, end);
+  }
+
   const rows = combos.map(([label, params]) => {
-    const { stats } = runBacktest(candles, params, 10_000_000, DEFAULT_COSTS);
+    const higherTf = label.includes("레짐") ? dailyCandles : [];
+    const { stats } = runBacktest(candles, params, 10_000_000, DEFAULT_COSTS, higherTf);
     return {
       조합: label,
       거래수: stats.n,
