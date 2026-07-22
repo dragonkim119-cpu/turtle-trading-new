@@ -28,6 +28,7 @@ export default function PositionsPage() {
     stop: "",
   });
   const [msg, setMsg] = useState("");
+  const [stopEdited, setStopEdited] = useState(false);
   const [calc, setCalc] = useState<{ atr: number | null; riskPct: number; stopMult: number }>({
     atr: null,
     riskPct: 2,
@@ -45,7 +46,9 @@ export default function PositionsPage() {
 
   useEffect(load, [load]);
 
-  // pull ATR for the calculator whenever symbol/tf changes
+  // pull ATR for the calculator whenever symbol/tf changes; only seed entryPrice
+  // (with the latest market close) if it's still empty — the stop itself is
+  // recomputed from entryPrice by the effect below, not from market price.
   useEffect(() => {
     fetch(`/api/candles?symbol=${form.symbol}&tf=${form.timeframe}&limit=300`)
       .then((r) => r.json())
@@ -54,22 +57,23 @@ export default function PositionsPage() {
         const atrV = atrArr[atrArr.length - 1] ?? null;
         setCalc({ atr: atrV, riskPct: d.params?.riskPct ?? 2, stopMult: d.params?.stopMult ?? 2 });
         const last = d.candles?.[d.candles.length - 1];
-        if (last && atrV) {
-          setForm((f) => ({
-            ...f,
-            entryPrice: f.entryPrice || String(last.close),
-            stop:
-              f.stop ||
-              String(
-                f.side === "long"
-                  ? (last.close - atrV * (d.params?.stopMult ?? 2)).toFixed(2)
-                  : (last.close + atrV * (d.params?.stopMult ?? 2)).toFixed(2),
-              ),
-          }));
+        if (last) {
+          setForm((f) => ({ ...f, entryPrice: f.entryPrice || String(last.close) }));
         }
       })
       .catch(() => {});
-  }, [form.symbol, form.timeframe, form.side]);
+  }, [form.symbol, form.timeframe]);
+
+  // auto-recompute stop = entryPrice ∓ ATR×stopMult whenever entryPrice or side
+  // changes, until the user edits the stop field directly (see stop input's
+  // onChange below, which sets stopEdited).
+  useEffect(() => {
+    if (stopEdited) return;
+    const entry = Number(form.entryPrice);
+    if (!entry || !calc.atr) return;
+    const stop = form.side === "long" ? entry - calc.atr * calc.stopMult : entry + calc.atr * calc.stopMult;
+    setForm((f) => (Number(f.entryPrice) === entry && f.side === form.side ? { ...f, stop: stop.toFixed(2) } : f));
+  }, [form.entryPrice, form.side, calc.atr, calc.stopMult, stopEdited]);
 
   const eq = Number(equity) || 0;
   const suggestedQty =
@@ -139,7 +143,14 @@ export default function PositionsPage() {
           </div>
           <div style={{ flex: 1 }}>
             <label>손절가</label>
-            <input type="number" value={form.stop} onChange={(e) => setForm({ ...form, stop: e.target.value })} />
+            <input
+              type="number"
+              value={form.stop}
+              onChange={(e) => {
+                setStopEdited(true);
+                setForm({ ...form, stop: e.target.value });
+              }}
+            />
           </div>
           <div style={{ flex: 1 }}>
             <label>수량</label>
