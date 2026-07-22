@@ -1,3 +1,4 @@
+import path from "node:path";
 import { openDb, Repo } from "@turtle/db";
 import type { Timeframe } from "@turtle/core";
 import { createBinanceClient } from "./binance.js";
@@ -16,7 +17,11 @@ const RSS_INTERVAL_MS = 10 * 60_000;
 const MACRO_INTERVAL_MS = 6 * 60 * 60_000; // 4x/day is plenty for daily macro closes
 
 function main() {
-  const dbPath = process.env.DB_PATH ?? "data/turtle.db";
+  // pnpm --filter runs this package's script with cwd=apps/engine, not the repo
+  // root, so a bare "data/turtle.db" would silently create a second, separate
+  // DB there instead of the one apps/web reads — anchor it the same way
+  // apps/web/lib/db.ts does.
+  const dbPath = process.env.DB_PATH ?? path.join(process.cwd(), "..", "..", "data", "turtle.db");
   const token = process.env.TELEGRAM_BOT_TOKEN ?? "";
   const chatId = process.env.TELEGRAM_CHAT_ID ?? "";
   if (!token || !chatId) {

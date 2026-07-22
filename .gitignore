@@ -5,6 +5,7 @@ dist/
 *.tsbuildinfo
 data/*.db
 data/*.db-*
+apps/engine/data/
 .env
 .env.local
 .DS_Store
