@@ -536,22 +536,34 @@ describe("judgeClose with chandelier exit", () => {
     }
   });
 
-  it("trailing only considers candles at/after entryTime (no look-back pollution)", () => {
-    const pos = { side: "long" as const, entryPrice: 12, stop: 8, entryTime: 30 };
+  it("trailing only considers candles at/after entryTime for the high/low scan (no look-back pollution)", () => {
+    // stop set far below anything plausible so a TRAIL_UPDATE always fires
+    // regardless of ATR magnitude -- this test isolates the high/low SCAN
+    // (does "highest" correctly exclude the pre-entry candle?), not the ATR
+    // value itself (ATR is legitimately computed over the full history,
+    // untouched by the entryTime scoping -- that's correct, unrelated behavior).
+    const pos = { side: "long" as const, entryPrice: 12, stop: -100, entryTime: 30 };
     const candles = [
-      c(100, 90, 95, 100, 0), // huge pre-entry high -- must be ignored
+      c(100, 90, 95, 100, 0), // huge pre-entry high -- must be ignored by the scan
       c(13, 11, 12, 100, 10),
       c(14, 12, 13, 100, 20),
       c(16, 13, 15, 100, 30), // entry bar (openTime === entryTime)
       c(18, 14, 17, 100, 40), // post-entry high 18
     ];
     const ev = judgeClose(pos, candles, withChand, null);
+    const atrArr = atr(candles, withChand.atrPeriod);
+    const atrAtLast = atrArr[atrArr.length - 1] as number;
+    // if the pre-entry high(100) leaked into the scan, highest would be 100
+    // instead of 18 (the true post-entry max), producing a wildly different
+    // candidate -- comparing against the 18-based formula is what actually
+    // proves exclusion, regardless of ATR's real (possibly pre-entry-influenced,
+    // and that's fine) magnitude.
+    const expectedCandidate = 18 - withChand.chandelier!.atrMult * atrAtLast;
     expect(ev).toHaveLength(1);
     expect(ev[0].type).toBe("TRAIL_UPDATE");
     if (ev[0].type === "TRAIL_UPDATE") {
-      // if the pre-entry high(100) leaked in, this would be far above 18
-      expect(ev[0].newStop).toBeLessThan(18);
-      expect(ev[0].newStop).toBeGreaterThan(pos.stop);
+      expect(ev[0].newStop).toBeCloseTo(expectedCandidate, 6);
+      expect(ev[0].newStop).toBeLessThan(50); // sanity bound: rules out the polluted (100-based) formula
     }
   });
 
