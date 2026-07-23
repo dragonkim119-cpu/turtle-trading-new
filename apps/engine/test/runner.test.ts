@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { openDb, Repo } from "@turtle/db";
-import type { Candle } from "@turtle/core";
+import { atr, type Candle } from "@turtle/core";
 import { checkStops, processSymbol, type RunnerDeps } from "../src/runner.js";
 import { Health } from "../src/health.js";
 import { msUntilNextClose } from "../src/scheduler.js";
@@ -153,6 +153,70 @@ describe("processSymbol", () => {
     const pos = repo.listPositions().find((p) => p.id === posId)!;
     expect(pos.stop).toBeGreaterThan(50);
     expect(pos.stopHistory.length).toBeGreaterThan(1);
+  });
+
+  it("threads entryTime through to judgeClose so chandelier trailing scopes to post-entry candles", async () => {
+    const now = Math.floor(Date.now() / H4) * H4 + 60_000;
+    const lastClosed = lastClosedOpenTime("4h", now);
+
+    const db = openDb(":memory:");
+    const r = new Repo(db);
+    const p = r.getParams("BTCUSDT", "4h");
+    p.chandelier = { atrMult: 2 };
+    r.upsertParams("BTCUSDT", "4h", p);
+
+    const entryTime = lastClosed - 4 * H4;
+    // stop set far below anything plausible so a TRAIL_UPDATE always fires
+    // regardless of ATR magnitude -- this test isolates the high/low SCAN
+    // (does "highest" correctly exclude the pre-entry decoy candle?), not the
+    // ATR value itself (ATR is legitimately computed over the full history,
+    // untouched by the entryTime scoping -- that's correct, unrelated behavior).
+    const posId = r.openPosition({
+      symbol: "BTCUSDT",
+      timeframe: "4h",
+      side: "long",
+      entryPrice: 100,
+      qty: 1,
+      stop: -1000,
+    });
+    db.prepare("UPDATE positions SET openedAt=? WHERE id=?").run(entryTime, posId);
+
+    const candles: Candle[] = [];
+    for (let i = 0; i < 30; i++) {
+      // pre-entry: huge high(200) that must NOT leak into the trailing scan
+      candles.push({ openTime: entryTime - (30 - i) * H4, open: 100, high: 200, low: 90, close: 100, volume: 100 });
+    }
+    candles.push({ openTime: entryTime, open: 100, high: 110, low: 95, close: 105, volume: 100 });
+    candles.push({ openTime: entryTime + H4, open: 105, high: 115, low: 100, close: 110, volume: 100 });
+    candles.push({ openTime: entryTime + 2 * H4, open: 110, high: 120, low: 105, close: 115, volume: 100 });
+    candles.push({ openTime: entryTime + 3 * H4, open: 115, high: 122, low: 110, close: 118, volume: 100 });
+    candles.push({ openTime: lastClosed, open: 118, high: 125, low: 112, close: 120, volume: 100 });
+
+    const telegram = { send: vi.fn(async () => true) };
+    const binance = {
+      fetchKlines: vi.fn(async () => candles.map((c) => ({ ...c }))),
+      fetchKlinesRaw: vi.fn(async () => [] as Candle[]),
+      fetchMarkPrice: vi.fn(async () => 0),
+      fetchFunding: vi.fn(async () => 0.0001),
+      fetchOiChangePct: vi.fn(async () => null),
+    };
+    const health = new Health(r, telegram);
+    const deps: RunnerDeps = { repo: r, binance, telegram, health };
+
+    await processSymbol(deps, "BTCUSDT", "4h", now);
+
+    const atrArr = atr(candles, p.atrPeriod);
+    const atrAtLast = atrArr[atrArr.length - 1] as number;
+    // highest since entry (excluding the pre-entry decoy) is 125 -- if the
+    // decoy high(200) leaked into the scan, the candidate would be based on
+    // 200 instead, producing a wildly different (much higher) stop.
+    const expectedCandidate = 125 - p.chandelier!.atrMult * atrAtLast;
+
+    const updated = r.getOpenPosition("BTCUSDT", "4h");
+    // proves entryTime threaded through (TRAIL_UPDATE fired off the -1000 stop)
+    // and the scan excluded the decoy (matches the 125-based formula exactly).
+    expect(updated?.stop).toBeCloseTo(expectedCandidate, 6);
+    expect(updated?.stop).toBeLessThan(50); // sanity bound: rules out the polluted (200-based) formula
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { judgeClose, resolveRegimeDir } from "../src/signals.js";
 import { runBacktest } from "../src/backtest.js";
+import { atr } from "../src/indicators.js";
 import type { Candle, Params } from "../src/types.js";
 
 function c(high: number, low: number, close: number, volume = 100, openTime = 0): Candle {
@@ -18,6 +19,7 @@ const P: Params = {
   entryBufferAtr: 0,
   partialTp: null,
   timeStop: null,
+  chandelier: null,
   filters: {
     adx: { on: false, period: 14, min: 20 },
     volume: { on: false, period: 20, mult: 1.5 },
@@ -299,6 +301,55 @@ describe("runBacktest", () => {
     expect(allowed.trades).toHaveLength(baseline.trades.length);
     expect(baseline.trades).toHaveLength(1); // sanity: exactly one trade exists to gate
   });
+
+  it("chandelier initial stop uses the breakout bar's own high, not close", () => {
+    const candles = [
+      c(11, 9, 10),
+      c(12, 10, 11),
+      c(13, 11, 12),
+      c(25, 12, 20), // breakout bar: high 25 (wick), close 20
+      c(13, 1, 5), // collapses well below any plausible chandelier stop
+    ];
+    const pChand: Params = { ...P, exitPeriod: 100, chandelier: { atrMult: 2 } };
+    const atrArr = atr(candles, pChand.atrPeriod);
+    const atrAtEntry = atrArr[3] as number;
+    const expectedStop = 25 - 2 * atrAtEntry; // from the bar's high(25), not close(20)
+
+    const result = runBacktest(candles, pChand, 1000);
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].exitReason).toBe("stop");
+    expect(result.trades[0].exitPrice).toBeCloseTo(expectedStop, 6);
+  });
+
+  it("chandelier stop only ratchets up, tracking the running high since entry each bar", () => {
+    const candles = [
+      c(9.5, 8.5, 9),
+      c(9.5, 8.5, 9),
+      c(9.5, 8.5, 9),
+      c(15, 9, 12), // entry (breakout)
+      c(20, 14, 19), // new high 20
+      c(24, 18, 23), // new high 24
+      c(22, 19, 20), // pulls back, no new high -- running high stays 24
+      c(21, 3, 10), // collapses -- must hit the ratcheted stop, not a stale lower one
+    ];
+    const pChand: Params = { ...P, exitPeriod: 100, chandelier: { atrMult: 2 } };
+    const atrArr = atr(candles, pChand.atrPeriod);
+
+    // Ground truth via independent replay of the same algorithm against the
+    // trusted atr() array -- avoids hand-deriving float values by hand.
+    let highest = candles[3].high;
+    let expectedStop = highest - 2 * (atrArr[3] as number);
+    for (let i = 4; i <= 6; i++) {
+      highest = Math.max(highest, candles[i].high);
+      const candidate = highest - 2 * (atrArr[i] as number);
+      if (candidate > expectedStop) expectedStop = candidate;
+    }
+
+    const result = runBacktest(candles, pChand, 1000);
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0].exitReason).toBe("stop");
+    expect(result.trades[0].exitPrice).toBeCloseTo(expectedStop, 6);
+  });
 });
 
 describe("resolveRegimeDir", () => {
@@ -380,5 +431,67 @@ describe("judgeClose with regime filter", () => {
     const ev = judgeClose(FLAT, candles, withRegime, null, null, daily);
     expect(ev).toHaveLength(1);
     expect(ev[0].type).toBe("ENTRY_LONG");
+  });
+});
+
+describe("judgeClose with chandelier exit", () => {
+  const withChand: Params = { ...P, chandelier: { atrMult: 2 } };
+
+  it("entry stop uses the breakout bar's own high, not close", () => {
+    const candles = [
+      c(11, 9, 10),
+      c(12, 10, 11),
+      c(13, 11, 12),
+      c(25, 12, 20), // breakout bar: high 25 (wick), close 20
+    ];
+    const ev = judgeClose(FLAT, candles, withChand, null);
+    expect(ev).toHaveLength(1);
+    expect(ev[0].type).toBe("ENTRY_LONG");
+    if (ev[0].type === "ENTRY_LONG") {
+      expect(ev[0].stop).toBeCloseTo(25 - 2 * ev[0].atr, 6);
+      expect(ev[0].stop).not.toBeCloseTo(20 - 2 * ev[0].atr, 1); // differs from close-based calc
+    }
+  });
+
+  it("trailing only considers candles at/after entryTime for the high/low scan (no look-back pollution)", () => {
+    // stop set far below anything plausible so a TRAIL_UPDATE always fires
+    // regardless of ATR magnitude -- this test isolates the high/low SCAN
+    // (does "highest" correctly exclude the pre-entry candle?), not the ATR
+    // value itself (ATR is legitimately computed over the full history,
+    // untouched by the entryTime scoping -- that's correct, unrelated behavior).
+    const pos = { side: "long" as const, entryPrice: 12, stop: -100, entryTime: 30 };
+    const candles = [
+      c(100, 90, 95, 100, 0), // huge pre-entry high -- must be ignored by the scan
+      c(13, 11, 12, 100, 10),
+      c(14, 12, 13, 100, 20),
+      c(16, 13, 15, 100, 30), // entry bar (openTime === entryTime)
+      c(18, 14, 17, 100, 40), // post-entry high 18
+    ];
+    const ev = judgeClose(pos, candles, withChand, null);
+    const atrArr = atr(candles, withChand.atrPeriod);
+    const atrAtLast = atrArr[atrArr.length - 1] as number;
+    // if the pre-entry high(100) leaked into the scan, highest would be 100
+    // instead of 18 (the true post-entry max), producing a wildly different
+    // candidate -- comparing against the 18-based formula is what actually
+    // proves exclusion, regardless of ATR's real (possibly pre-entry-influenced,
+    // and that's fine) magnitude.
+    const expectedCandidate = 18 - withChand.chandelier!.atrMult * atrAtLast;
+    expect(ev).toHaveLength(1);
+    expect(ev[0].type).toBe("TRAIL_UPDATE");
+    if (ev[0].type === "TRAIL_UPDATE") {
+      expect(ev[0].newStop).toBeCloseTo(expectedCandidate, 6);
+      expect(ev[0].newStop).toBeLessThan(50); // sanity bound: rules out the polluted (100-based) formula
+    }
+  });
+
+  it("skips trailing (no crash, no event) when entryTime is missing", () => {
+    const pos = { side: "long" as const, entryPrice: 12, stop: 8 }; // no entryTime
+    const candles = [
+      c(13, 11, 12, 100, 0),
+      c(14, 12, 13, 100, 1),
+      c(18, 14, 17, 100, 2),
+    ];
+    const ev = judgeClose(pos, candles, withChand, null);
+    expect(ev).toHaveLength(0);
   });
 });

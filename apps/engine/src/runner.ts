@@ -142,7 +142,7 @@ export async function processSymbol(
     const params = repo.getParams(symbol, tf);
     const open = repo.getOpenPosition(symbol, tf);
     const pos: PosCtx = open
-      ? { side: open.side, entryPrice: open.entryPrice, stop: open.stop }
+      ? { side: open.side, entryPrice: open.entryPrice, stop: open.stop, entryTime: open.openedAt }
       : { side: null };
 
     const events = judgeClose(pos, window, params, funding, oiChangePct, higherTfCandles);
