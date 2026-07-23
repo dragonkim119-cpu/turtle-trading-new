@@ -38,9 +38,12 @@ export function resolveRegimeDir(
  * - Entries: close beyond prior entryPeriod Donchian extreme, on the correct
  *   side of EMA(emaPeriod), with all enabled filters passing. Filters gate
  *   entries only.
- * - Initial stop: entry -/+ stopMult * ATR(atrPeriod).
- * - Trailing: exitPeriod opposite extreme ratchets the stop (never loosens).
- * - Exit: close beyond exitPeriod opposite extreme.
+ * - Initial stop: entry -/+ stopMult * ATR(atrPeriod) (classic), or the
+ *   breakout bar's own high/low -/+ chandelier.atrMult * ATR (chandelier).
+ * - Trailing: exitPeriod opposite extreme ratchets the stop (classic), or
+ *   the running high/low since entry -/+ chandelier.atrMult * ATR (chandelier).
+ * - Exit: close beyond exitPeriod opposite extreme (classic only — chandelier
+ *   has no close-based exit, only the intrabar stop, handled by the stop monitor).
  * - Stop-loss touch is judged intraday elsewhere (stop monitor), not here.
  */
 export function judgeClose(
@@ -78,10 +81,13 @@ export function judgeClose(
       const regimeDir = resolveRegimeDir(higherTfCandles, candles[i].openTime, params.filters.regime.emaPeriod);
       const checks = evaluateFilters("long", candles, i, funding, params.filters, oiChangePct, regimeDir);
       if (allPassed(checks)) {
+        const stop = params.chandelier
+          ? candles[i].high - params.chandelier.atrMult * atrV
+          : close - params.stopMult * atrV;
         events.push({
           type: "ENTRY_LONG",
           price: close,
-          stop: close - params.stopMult * atrV,
+          stop,
           atr: atrV,
           filters: checks,
         });
@@ -92,10 +98,13 @@ export function judgeClose(
       const regimeDir = resolveRegimeDir(higherTfCandles, candles[i].openTime, params.filters.regime.emaPeriod);
       const checks = evaluateFilters("short", candles, i, funding, params.filters, oiChangePct, regimeDir);
       if (allPassed(checks)) {
+        const stop = params.chandelier
+          ? candles[i].low + params.chandelier.atrMult * atrV
+          : close + params.stopMult * atrV;
         events.push({
           type: "ENTRY_SHORT",
           price: close,
-          stop: close + params.stopMult * atrV,
+          stop,
           atr: atrV,
           filters: checks,
         });
@@ -106,7 +115,29 @@ export function judgeClose(
     return events;
   }
 
-  // Holding a position: exit first, else trailing update.
+  // Holding a position: chandelier replaces the channel exit+trailing entirely.
+  if (params.chandelier) {
+    if (pos.entryTime === undefined || atrV === null) return events;
+    const since = candles.filter((c) => c.openTime >= (pos.entryTime as number));
+    if (since.length === 0) return events;
+    const mult = params.chandelier.atrMult;
+    if (pos.side === "long") {
+      const highest = Math.max(...since.map((c) => c.high));
+      const candidate = highest - mult * atrV;
+      if (pos.stop !== undefined && candidate > pos.stop) {
+        events.push({ type: "TRAIL_UPDATE", newStop: candidate, prevStop: pos.stop });
+      }
+    } else {
+      const lowest = Math.min(...since.map((c) => c.low));
+      const candidate = lowest + mult * atrV;
+      if (pos.stop !== undefined && candidate < pos.stop) {
+        events.push({ type: "TRAIL_UPDATE", newStop: candidate, prevStop: pos.stop });
+      }
+    }
+    return events;
+  }
+
+  // Holding a position (classic): exit first, else trailing update.
   if (exitBand === null) return events;
 
   if (pos.side === "long") {

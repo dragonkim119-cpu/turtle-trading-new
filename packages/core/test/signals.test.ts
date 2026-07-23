@@ -433,3 +433,65 @@ describe("judgeClose with regime filter", () => {
     expect(ev[0].type).toBe("ENTRY_LONG");
   });
 });
+
+describe("judgeClose with chandelier exit", () => {
+  const withChand: Params = { ...P, chandelier: { atrMult: 2 } };
+
+  it("entry stop uses the breakout bar's own high, not close", () => {
+    const candles = [
+      c(11, 9, 10),
+      c(12, 10, 11),
+      c(13, 11, 12),
+      c(25, 12, 20), // breakout bar: high 25 (wick), close 20
+    ];
+    const ev = judgeClose(FLAT, candles, withChand, null);
+    expect(ev).toHaveLength(1);
+    expect(ev[0].type).toBe("ENTRY_LONG");
+    if (ev[0].type === "ENTRY_LONG") {
+      expect(ev[0].stop).toBeCloseTo(25 - 2 * ev[0].atr, 6);
+      expect(ev[0].stop).not.toBeCloseTo(20 - 2 * ev[0].atr, 1); // differs from close-based calc
+    }
+  });
+
+  it("trailing only considers candles at/after entryTime for the high/low scan (no look-back pollution)", () => {
+    // stop set far below anything plausible so a TRAIL_UPDATE always fires
+    // regardless of ATR magnitude -- this test isolates the high/low SCAN
+    // (does "highest" correctly exclude the pre-entry candle?), not the ATR
+    // value itself (ATR is legitimately computed over the full history,
+    // untouched by the entryTime scoping -- that's correct, unrelated behavior).
+    const pos = { side: "long" as const, entryPrice: 12, stop: -100, entryTime: 30 };
+    const candles = [
+      c(100, 90, 95, 100, 0), // huge pre-entry high -- must be ignored by the scan
+      c(13, 11, 12, 100, 10),
+      c(14, 12, 13, 100, 20),
+      c(16, 13, 15, 100, 30), // entry bar (openTime === entryTime)
+      c(18, 14, 17, 100, 40), // post-entry high 18
+    ];
+    const ev = judgeClose(pos, candles, withChand, null);
+    const atrArr = atr(candles, withChand.atrPeriod);
+    const atrAtLast = atrArr[atrArr.length - 1] as number;
+    // if the pre-entry high(100) leaked into the scan, highest would be 100
+    // instead of 18 (the true post-entry max), producing a wildly different
+    // candidate -- comparing against the 18-based formula is what actually
+    // proves exclusion, regardless of ATR's real (possibly pre-entry-influenced,
+    // and that's fine) magnitude.
+    const expectedCandidate = 18 - withChand.chandelier!.atrMult * atrAtLast;
+    expect(ev).toHaveLength(1);
+    expect(ev[0].type).toBe("TRAIL_UPDATE");
+    if (ev[0].type === "TRAIL_UPDATE") {
+      expect(ev[0].newStop).toBeCloseTo(expectedCandidate, 6);
+      expect(ev[0].newStop).toBeLessThan(50); // sanity bound: rules out the polluted (100-based) formula
+    }
+  });
+
+  it("skips trailing (no crash, no event) when entryTime is missing", () => {
+    const pos = { side: "long" as const, entryPrice: 12, stop: 8 }; // no entryTime
+    const candles = [
+      c(13, 11, 12, 100, 0),
+      c(14, 12, 13, 100, 1),
+      c(18, 14, 17, 100, 2),
+    ];
+    const ev = judgeClose(pos, candles, withChand, null);
+    expect(ev).toHaveLength(0);
+  });
+});
