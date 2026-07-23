@@ -18,6 +18,7 @@ const P: Params = {
   entryBufferAtr: 0,
   partialTp: null,
   timeStop: null,
+  chandelier: null,
   filters: {
     adx: { on: false, period: 14, min: 20 },
     volume: { on: false, period: 20, mult: 1.5 },

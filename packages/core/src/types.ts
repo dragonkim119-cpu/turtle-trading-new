@@ -38,6 +38,10 @@ export interface TimeStop {
   bars: number; // e.g. 12
 }
 
+export interface ChandelierConfig {
+  atrMult: number; // e.g. 3.0 (classic chandelier convention)
+}
+
 export interface Params {
   entryPeriod: number; // Donchian entry channel (default 20)
   exitPeriod: number; // Donchian exit channel (default 10)
@@ -51,6 +55,8 @@ export interface Params {
   partialTp: PartialTp | null;
   /** time-based exit; null = off. Backtest-gated before default-on. */
   timeStop: TimeStop | null;
+  /** ATR trailing stop off entry-high/low; null = off (classic donchian channel exit) */
+  chandelier: ChandelierConfig | null;
   filters: FilterConfig;
 }
 
@@ -66,6 +72,7 @@ export const DEFAULT_PARAMS: Params = {
   // rate + trims MDD but slightly lowers PF (clips recoveries) — opt in per symbol.
   partialTp: { atR: 1, fraction: 0.5, moveStopToBreakeven: false },
   timeStop: null, // off by default; adopt only if backtest gate passes
+  chandelier: null, // off by default; adopt only if backtest gate passes
 
   filters: {
     adx: { on: true, period: 14, min: 20 },
@@ -88,6 +95,7 @@ export interface PosCtx {
   side: Side | null;
   entryPrice?: number;
   stop?: number;
+  entryTime?: number; // needed for chandelier's "since entry" high/low scan
 }
 
 export type SignalEvent =
