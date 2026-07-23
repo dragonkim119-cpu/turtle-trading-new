@@ -88,6 +88,8 @@ export function runBacktest(
   let openFraction = 1; // fraction of the position still open
   let barsInTrade = 0; // bars elapsed since entry
   let reached1R = false; // whether price ever reached +1R
+  let highestSinceEntry = 0; // chandelier: running high since entry (long)
+  let lowestSinceEntry = 0; // chandelier: running low since entry (short)
 
   const closeTrade = (
     exitTime: number,
@@ -118,6 +120,7 @@ export function runBacktest(
 
   for (let i = 1; i < candles.length; i++) {
     const c = candles[i];
+    const atrV = atrArr[i];
 
     if (side !== null) {
       // 1) intrabar stop (checked before partial TP — conservative when both hit in one bar)
@@ -148,20 +151,40 @@ export function runBacktest(
           }
         }
       }
-      // 2) close-based channel exit
-      const xb = exitBands[i];
-      if (xb !== null) {
-        if (side === "long" && c.close < xb.lower) {
-          closeTrade(c.openTime, c.close, "channel");
-          continue;
+      // 2) trailing: chandelier (ATR off the running high/low since entry)
+      // replaces the donchian channel exit+ratchet entirely when enabled --
+      // the intrabar stop check in (1) is the only exit trigger either way.
+      if (params.chandelier) {
+        const mult = params.chandelier.atrMult;
+        if (side === "long") {
+          highestSinceEntry = Math.max(highestSinceEntry, c.high);
+          if (atrV !== null) {
+            const candidate = highestSinceEntry - mult * atrV;
+            if (candidate > stop) stop = candidate;
+          }
+        } else {
+          lowestSinceEntry = Math.min(lowestSinceEntry, c.low);
+          if (atrV !== null) {
+            const candidate = lowestSinceEntry + mult * atrV;
+            if (candidate < stop) stop = candidate;
+          }
         }
-        if (side === "short" && c.close > xb.upper) {
-          closeTrade(c.openTime, c.close, "channel");
-          continue;
+      } else {
+        // 2) close-based channel exit
+        const xb = exitBands[i];
+        if (xb !== null) {
+          if (side === "long" && c.close < xb.lower) {
+            closeTrade(c.openTime, c.close, "channel");
+            continue;
+          }
+          if (side === "short" && c.close > xb.upper) {
+            closeTrade(c.openTime, c.close, "channel");
+            continue;
+          }
+          // 3) trailing ratchet
+          if (side === "long" && xb.lower > stop) stop = xb.lower;
+          if (side === "short" && xb.upper < stop) stop = xb.upper;
         }
-        // 3) trailing ratchet
-        if (side === "long" && xb.lower > stop) stop = xb.lower;
-        if (side === "short" && xb.upper < stop) stop = xb.upper;
       }
       // 4) time stop: exit if +1R never reached within N bars
       barsInTrade++;
@@ -177,7 +200,6 @@ export function runBacktest(
     // Flat: entries
     const eb = entryBands[i];
     const emaV = emaArr[i];
-    const atrV = atrArr[i];
     if (eb === null || emaV === null || atrV === null) continue;
 
     if (params.filters.regime.on) {
@@ -212,8 +234,20 @@ export function runBacktest(
     side = dir;
     entryPrice = c.close;
     entryTime = c.openTime;
-    initRisk = params.stopMult * atrV;
-    stop = dir === "long" ? c.close - initRisk : c.close + initRisk;
+    if (params.chandelier) {
+      const mult = params.chandelier.atrMult;
+      if (dir === "long") {
+        highestSinceEntry = c.high;
+        stop = highestSinceEntry - mult * atrV;
+      } else {
+        lowestSinceEntry = c.low;
+        stop = lowestSinceEntry + mult * atrV;
+      }
+      initRisk = Math.abs(c.close - stop);
+    } else {
+      initRisk = params.stopMult * atrV;
+      stop = dir === "long" ? c.close - initRisk : c.close + initRisk;
+    }
     effEntry = c.close * (1 + slip * (dir === "long" ? 1 : -1)); // adverse slippage on entry fill
     feeR = initRisk > 0 ? (effEntry * taker) / initRisk : 0; // entry fee (full position)
     partialDone = false;
