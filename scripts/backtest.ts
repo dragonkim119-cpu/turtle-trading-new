@@ -70,6 +70,12 @@ function withRegime(): Params {
   return p;
 }
 
+function withChandelier(): Params {
+  const p = withFilters({});
+  p.chandelier = { atrMult: 3 };
+  return p;
+}
+
 function loadSavedParams(symbol: string, timeframe: Timeframe): Params {
   const dbPath = process.env.DB_PATH ?? path.join(process.cwd(), "data", "turtle.db");
   const repo = new Repo(openDb(dbPath));
@@ -128,6 +134,7 @@ async function main() {
     ["거래량만", withFilters({ volume: true })],
     ["VWAP만", withFilters({ vwap: true })],
     ...(interval !== "1d" ? ([["레짐만(1d)", withRegime()]] as [string, Params][]) : []),
+    ["샤데리어(3xATR)", withChandelier()],
     ["전부 ON", withFilters({ adx: true, volume: true, vwap: true })],
   ];
 
